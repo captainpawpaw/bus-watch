@@ -1,0 +1,543 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Bus Watch">
+<meta name="theme-color" content="#14161b">
+<title>Bus Watch</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Barlow:wght@400;500;600&display=swap">
+<style>
+/* Layout: setup form on first open; then 1–3 live cards. One card = full-screen countdown,
+   two = medium cards, three = compact cards. Side by side on wide screens, stacked on phones. */
+:root{
+  --bg:#f3f1ee; --surface:#ffffff; --fg:#1b1d22; --muted:#6b6f78; --line:#e2dfda;
+  --accent:#c8261d; --ok:#1f7a4d; --warn:#b26a00; --info:#2a5db0;
+  --display:"Barlow Condensed","Arial Narrow",system-ui,sans-serif;
+  --body:"Barlow",system-ui,-apple-system,sans-serif;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){:root{
+  --bg:#14161b; --surface:#1d2027; --fg:#f2f1ee; --muted:#9a9ea8; --line:#2b2f38;
+  --accent:#ff4a3d; --ok:#4fc58a; --warn:#f0a83a; --info:#7aa7ff; color-scheme:dark}}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--fg);font-family:var(--body);font-size:16px;
+  padding:calc(env(safe-area-inset-top,0px) + 18px) 16px calc(env(safe-area-inset-bottom,0px) + 24px);
+  max-width:560px;margin:0 auto;font-variant-numeric:tabular-nums}
+body.wide{max-width:1180px}
+button{font:600 15px var(--body);cursor:pointer;color:var(--fg)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.topbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px}
+.brand{font-family:var(--display);font-weight:700;font-size:28px;letter-spacing:.01em}
+.brand span{color:var(--accent)}
+.btn{padding:8px 14px;border-radius:8px;border:1px solid var(--line);background:var(--surface)}
+.btn.primary{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+.btn.ghost{background:transparent}
+.lbl{text-transform:uppercase;letter-spacing:.08em;font-size:12px;color:var(--muted);font-weight:600}
+
+/* ---------- Setup form ---------- */
+.intro{color:var(--muted);margin:0 0 16px;line-height:1.45}
+fieldset.slot{border:1px solid var(--line);background:var(--surface);border-radius:12px;padding:16px;margin:0 0 14px;display:grid;gap:12px;min-width:0}
+.slot-head{display:flex;justify-content:space-between;align-items:center}
+.slot-head h2{margin:0;font-family:var(--display);font-size:22px}
+.field{display:grid;gap:6px;min-width:0}
+.field > span{font-size:13px;font-weight:600;color:var(--muted)}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.row > *{min-width:0}
+input,select{font:500 16px var(--body);padding:9px 10px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--fg);max-width:100%}
+input.route{width:110px;font:700 22px var(--display);text-transform:uppercase}
+select.stops{width:100%}
+.days{display:flex;gap:5px;flex-wrap:wrap}
+.days button{width:40px;padding:7px 0;border-radius:8px;border:1px solid var(--line);background:var(--bg);font-size:14px}
+.days button[aria-pressed="true"]{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+.msg{margin:0;font-size:14px;color:var(--muted)}
+.msg.err{color:var(--accent)}
+.form-actions{display:flex;gap:10px;flex-wrap:wrap;justify-content:space-between;margin-top:4px}
+
+/* ---------- Live cards ---------- */
+.cards{display:grid;gap:14px}
+body.wide .cards.n2{grid-template-columns:repeat(2,minmax(0,1fr))}
+body.wide .cards.n3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:16px;min-width:0}
+.cards.n1 .card{background:transparent;border:0;padding:4px 0}
+.c-head{display:flex;align-items:center;gap:10px}
+.badge{flex:none;display:grid;place-items:center;min-width:48px;height:38px;padding:0 8px;border-radius:8px;background:var(--accent);color:#fff;font:700 24px var(--display)}
+.c-title{min-width:0}
+.c-title b{display:block;font-size:16px}
+.c-title span{display:block;font-size:13px;color:var(--muted);overflow-wrap:anywhere}
+.big{font-family:var(--display);font-weight:700;line-height:.9;margin:12px 0 0}
+.big small{font-size:.34em;font-weight:600;margin-left:5px;color:var(--muted)}
+.big.due{color:var(--accent)}
+.n1 .big{font-size:clamp(90px,30vw,150px)}
+.n2 .big{font-size:68px}
+.n3 .big{font-size:50px}
+.sub{display:flex;flex-wrap:wrap;gap:4px 12px;color:var(--muted);font-size:14px;margin:8px 0}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{display:inline-block;font-weight:600;font-size:13px;padding:3px 9px;border-radius:6px}
+.go{background:color-mix(in srgb,var(--accent) 15%,transparent);color:var(--accent)}
+.soon,.slip{background:color-mix(in srgb,var(--warn) 16%,transparent);color:var(--warn)}
+.fine,.ontrack{background:color-mix(in srgb,var(--ok) 15%,transparent);color:var(--ok)}
+.catch{background:color-mix(in srgb,var(--info) 15%,transparent);color:var(--info)}
+.wait{background:color-mix(in srgb,var(--muted) 15%,transparent);color:var(--muted)}
+.advice{margin:12px 0 0;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:var(--bg);font-size:14px;line-height:1.4}
+.n1 .advice{background:var(--surface)}
+.advice b{display:block}
+.advice.warn b{color:var(--warn)} .advice.tip b{color:var(--info)}
+.strip{position:relative;height:62px;margin:16px 8px 0}
+.rail{position:absolute;left:0;right:0;top:26px;height:4px;border-radius:2px;background:var(--line)}
+.tick{position:absolute;top:24px;width:2px;height:8px;background:var(--line)}
+.you{position:absolute;right:-8px;top:16px;width:24px;height:24px;border-radius:50%;background:var(--accent);border:4px solid var(--surface);box-shadow:0 0 0 2px var(--accent)}
+.n1 .you{border-color:var(--bg)}
+.bus{position:absolute;top:14px;transform:translateX(-50%);transition:left .8s ease}
+.bus.up{top:-8px}
+.bus i{display:grid;place-items:center;min-width:28px;padding:0 5px;height:26px;white-space:nowrap;border-radius:7px;background:var(--fg);color:var(--bg);font:700 15px var(--display);font-style:normal}
+.ends{display:flex;justify-content:space-between;color:var(--muted);font-size:12px;margin-top:-10px}
+.ends b{color:var(--accent);font-weight:600}
+ul.buses{list-style:none;margin:10px 0 0;padding:0}
+ul.buses li{display:grid;grid-template-columns:1fr auto;align-items:center;gap:10px;padding:11px 0;border-top:1px solid var(--line)}
+.num{display:grid;place-items:center;width:26px;height:26px;border-radius:7px;background:var(--fg);color:var(--bg);font:700 15px var(--display)}
+.info{min-width:0}
+.where{color:var(--muted);font-size:13px;margin:0 0 5px;overflow-wrap:anywhere}
+.mins{font:700 26px var(--display);text-align:right;line-height:1}
+.mins span{display:block;font:500 12px var(--body);color:var(--muted)}
+.then{margin-top:10px;font-size:14px;color:var(--muted)}
+.then b{color:var(--fg)}
+.empty{color:var(--muted);margin:12px 0 0}
+/* Sleeping cards (outside chosen hours) */
+.sleep{display:flex;align-items:center;gap:10px;padding:12px 14px;border-radius:12px;border:1px dashed var(--line);margin-top:10px}
+.sleep .c-title{flex:1}
+.sleep .badge{background:var(--muted);height:32px;min-width:42px;font-size:20px}
+.none{padding:24px 0 6px}
+.none h2{font-family:var(--display);font-size:30px;margin:0 0 4px}
+.none p{margin:0;color:var(--muted)}
+footer{margin-top:18px;display:flex;justify-content:space-between;align-items:center;gap:12px;color:var(--muted);font-size:13px}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--ok);margin-right:6px;vertical-align:middle}
+.dot.stale{background:var(--warn)}.dot.err{background:var(--accent)}
+.note{color:var(--muted);font-size:12px;margin-top:12px;line-height:1.4}
+@media (prefers-reduced-motion:reduce){.bus{transition:none}}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <div class="brand">Bus<span>Watch</span></div>
+  <button class="btn" id="editBtn" hidden>Edit my buses</button>
+</div>
+
+<main id="setup" hidden></main>
+<main id="live" hidden>
+  <div id="cards"></div>
+  <div id="sleeping"></div>
+  <footer>
+    <span id="status"><span class="dot"></span>Connecting…</span>
+    <button class="btn" id="refresh">Refresh</button>
+  </footer>
+  <p class="note">"Slipping" means a bus's predicted arrival has been pushed back over the last few minutes; trends build up while the app is open. Powered by TfL Open Data.</p>
+</main>
+
+<script>
+const API = "https://api.tfl.gov.uk";
+const MAX = 6, POLL = 20000, TREND_WINDOW = 5 * 60000;
+const DAY = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+const DAY_ORDER = [1,2,3,4,5,6,0];
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const store = {
+  get(k, d){ try{ const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); }catch{ return d; } },
+  set(k, v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch{} }
+};
+
+let watches = store.get("bw.watches", null);
+let hist = store.get("bw.hist", {});
+let live = {};          // route -> {preds, ok, err}
+let override = {};      // watch index -> show-until time
+let routeData = {};     // route -> {dirs:[{dir,dest,stops}]} | {error}
+let draft = [], filters = {}, slotMsg = {};
+
+const blank = () => ({route:"", dir:"", dest:"", stop:"", stopName:"", letter:"", from:"07:00", to:"09:00", days:[1,2,3,4,5], walk:3});
+
+/* =================== SETUP FORM =================== */
+async function loadRoute(route){
+  const r = route.trim().toLowerCase();
+  if (!r) return null;
+  if (routeData[r] && !routeData[r].error) return routeData[r];
+  routeData[r] = {loading:true};
+  try{
+    const res = await Promise.all(["inbound","outbound"].map(d =>
+      fetch(`${API}/Line/${encodeURIComponent(r)}/Route/Sequence/${d}`).then(x => x.ok ? x.json() : null).catch(() => null)));
+    const dirs = [];
+    ["inbound","outbound"].forEach((d, k) => {
+      const j = res[k];
+      if (!j || !j.stopPointSequences || !j.stopPointSequences.length) return;
+      const seen = new Set(), stops = [];
+      let longest = j.stopPointSequences[0];
+      for (const seq of j.stopPointSequences){
+        if (seq.stopPoint.length > longest.stopPoint.length) longest = seq;
+        for (const s of seq.stopPoint){
+          if (seen.has(s.id)) continue;
+          seen.add(s.id);
+          stops.push({id:s.id, name:s.name, letter:s.stopLetter || "", towards:s.towards || "", lat:s.lat, lon:s.lon});
+        }
+      }
+      dirs.push({dir:d, dest:longest.stopPoint[longest.stopPoint.length - 1].name, stops});
+    });
+    routeData[r] = dirs.length ? {dirs} : {error:`Couldn't find route ${route.toUpperCase()}. Check the number and try again.`};
+  }catch{
+    routeData[r] = {error:"Couldn't reach TfL. Check your connection and try again."};
+  }
+  return routeData[r];
+}
+
+function openSetup(){
+  draft = watches && watches.length ? JSON.parse(JSON.stringify(watches)) : [blank()];
+  filters = {}; slotMsg = {};
+  $("live").hidden = true; $("setup").hidden = false; $("editBtn").hidden = true;
+  document.body.classList.remove("wide");
+  renderForm();
+  draft.forEach((w, i) => { if (w.route) findStops(i, true); });
+}
+
+function stopLabel(s){ return `${s.name}${s.letter && !s.letter.startsWith("->") ? " (Stop " + s.letter + ")" : ""}`; }
+
+function slotHTML(w, i){
+  const rd = routeData[w.route.trim().toLowerCase()];
+  const dirs = rd && rd.dirs;
+  const dirObj = dirs && (dirs.find(d => d.dir === w.dir) || null);
+  let body = "";
+  if (dirs){
+    body += `<label class="field"><span>Direction</span>
+      <select id="dir-${i}" data-i="${i}" data-f="dir">
+        <option value="">Choose a direction…</option>
+        ${dirs.map(d => `<option value="${d.dir}" ${d.dir === w.dir ? "selected" : ""}>Towards ${esc(d.dest)}</option>`).join("")}
+      </select></label>`;
+    if (dirObj){
+      const f = (filters[i] || "").toLowerCase();
+      let stops = dirObj.stops;
+      if (w._near) stops = [...stops].sort((a, b) => dist(a, w._near) - dist(b, w._near));
+      const shown = stops.filter(s => !f || s.name.toLowerCase().includes(f) || s.letter.toLowerCase() === f || s.id === w.stop);
+      body += `<div class="field"><span>Your stop</span>
+        <div class="row"><input id="filter-${i}" data-i="${i}" data-f="filter" placeholder="Type to search stops" value="${esc(filters[i] || "")}" style="flex:1">
+        <button type="button" class="btn" data-act="near" data-i="${i}">Nearest to me</button></div>
+        <select class="stops" id="stop-${i}" data-i="${i}" data-f="stop">
+          <option value="">Choose your stop… (${shown.length})</option>
+          ${shown.map(s => `<option value="${s.id}" ${s.id === w.stop ? "selected" : ""}>${esc(stopLabel(s))}${w._near ? " · " + Math.round(dist(s, w._near)) + " m" : ""}</option>`).join("")}
+        </select></div>
+      <div class="field"><span>Show live times between</span>
+        <div class="row"><input type="time" id="from-${i}" data-i="${i}" data-f="from" value="${w.from}"> <span>and</span>
+        <input type="time" id="to-${i}" data-i="${i}" data-f="to" value="${w.to}"></div></div>
+      <div class="field"><span>On these days</span>
+        <div class="days">${DAY_ORDER.map(d => `<button type="button" data-act="day" data-i="${i}" data-d="${d}" aria-pressed="${w.days.includes(d)}">${DAY[d]}</button>`).join("")}</div></div>
+      <label class="field"><span>Walk from home to the stop</span>
+        <div class="row"><input type="number" id="walk-${i}" data-i="${i}" data-f="walk" min="0" max="60" value="${w.walk}" style="width:80px" inputmode="numeric"> <span>minutes</span></div></label>`;
+    }
+  }
+  const m = slotMsg[i];
+  return `<fieldset class="slot">
+    <div class="slot-head"><h2>Bus ${i + 1}</h2>${draft.length > 1 ? `<button type="button" class="btn ghost" data-act="remove" data-i="${i}">Remove</button>` : ""}</div>
+    <div class="field"><span>Bus route number</span>
+      <div class="row"><input class="route" id="route-${i}" data-i="${i}" data-f="route" value="${esc(w.route)}" placeholder="62" autocapitalize="characters" autocomplete="off">
+      <button type="button" class="btn" data-act="find" data-i="${i}">Find stops</button></div></div>
+    ${m ? `<p class="msg ${m.err ? "err" : ""}">${esc(m.text)}</p>` : ""}
+    ${body}
+  </fieldset>`;
+}
+
+function renderForm(){
+  const focusId = document.activeElement && document.activeElement.id;
+  $("setup").innerHTML = `
+    <p class="intro">Add up to ${MAX} buses you catch. Pick the route, your stop and the hours you want live times. Outside those hours the app stays quiet.</p>
+    <form id="form" novalidate>
+      ${draft.map(slotHTML).join("")}
+      <div class="form-actions">
+        ${draft.length < MAX ? `<button type="button" class="btn" data-act="add">+ Add another bus</button>` : `<span class="msg">Maximum of ${MAX} buses</span>`}
+        <div class="row">
+          ${watches && watches.length ? `<button type="button" class="btn ghost" data-act="cancel">Cancel</button>` : ""}
+          <button type="submit" class="btn primary">Save and show times</button>
+        </div>
+      </div>
+      <p class="msg err" id="formErr"></p>
+    </form>`;
+  if (focusId && $(focusId)){ const el = $(focusId); el.focus(); if (el.setSelectionRange && el.type === "text") { const n = el.value.length; el.setSelectionRange(n, n); } }
+}
+
+async function findStops(i, quiet){
+  const w = draft[i];
+  if (!w.route.trim()){ slotMsg[i] = {err:true, text:"Type a route number first."}; renderForm(); return; }
+  if (!quiet){ slotMsg[i] = {text:"Looking up route " + w.route.toUpperCase() + "…"}; renderForm(); }
+  const rd = await loadRoute(w.route);
+  if (!rd) return;
+  if (rd.error){ slotMsg[i] = {err:true, text:rd.error}; }
+  else {
+    delete slotMsg[i];
+    if (!rd.dirs.some(d => d.dir === w.dir)){ w.dir = rd.dirs.length === 1 ? rd.dirs[0].dir : ""; w.stop = ""; }
+  }
+  renderForm();
+}
+
+function dist(s, p){ // metres
+  const R = 6371000, toR = x => x * Math.PI / 180;
+  const dLat = toR(s.lat - p.lat), dLon = toR(s.lon - p.lon);
+  const a = Math.sin(dLat/2)**2 + Math.cos(toR(p.lat)) * Math.cos(toR(s.lat)) * Math.sin(dLon/2)**2;
+  return 2 * R * Math.asin(Math.sqrt(a));
+}
+
+$("setup").addEventListener("click", e => {
+  const b = e.target.closest("[data-act]"); if (!b) return;
+  const i = +b.dataset.i, act = b.dataset.act;
+  if (act === "add"){ draft.push(blank()); renderForm(); $("route-" + (draft.length - 1)).focus(); }
+  if (act === "remove"){ draft.splice(i, 1); filters = {}; slotMsg = {}; renderForm(); }
+  if (act === "cancel"){ showLive(); }
+  if (act === "find"){ findStops(i); }
+  if (act === "day"){
+    const d = +b.dataset.d, w = draft[i];
+    w.days = w.days.includes(d) ? w.days.filter(x => x !== d) : [...w.days, d];
+    b.setAttribute("aria-pressed", w.days.includes(d));
+  }
+  if (act === "near"){
+    if (!navigator.geolocation){ slotMsg[i] = {err:true, text:"Your browser can't share your location. Search for the stop by name instead."}; renderForm(); return; }
+    slotMsg[i] = {text:"Finding your location…"}; renderForm();
+    navigator.geolocation.getCurrentPosition(pos => {
+      const w = draft[i];
+      w._near = {lat:pos.coords.latitude, lon:pos.coords.longitude};
+      const dirObj = routeData[w.route.trim().toLowerCase()].dirs.find(d => d.dir === w.dir);
+      const nearest = [...dirObj.stops].sort((a, b) => dist(a, w._near) - dist(b, w._near))[0];
+      if (nearest) setStop(w, nearest);
+      filters[i] = "";
+      slotMsg[i] = {text:`Nearest stop selected: ${stopLabel(nearest)}. Stops are now sorted by distance.`};
+      renderForm();
+    }, () => { slotMsg[i] = {err:true, text:"Location wasn't shared. Search for the stop by name instead."}; renderForm(); },
+    {enableHighAccuracy:true, timeout:10000});
+  }
+});
+function setStop(w, s){ w.stop = s.id; w.stopName = s.name; w.letter = (s.letter || "").startsWith("->") ? "" : s.letter; }
+
+$("setup").addEventListener("input", e => {
+  const el = e.target, i = +el.dataset.i, f = el.dataset.f; if (!f) return;
+  const w = draft[i];
+  if (f === "route"){ w.route = el.value.trim(); }
+  if (f === "filter"){ filters[i] = el.value; renderForm(); }
+  if (f === "from" || f === "to") w[f] = el.value;
+  if (f === "walk") w.walk = Math.max(0, +el.value || 0);
+});
+$("setup").addEventListener("change", e => {
+  const el = e.target, i = +el.dataset.i, f = el.dataset.f; if (!f) return;
+  const w = draft[i];
+  if (f === "route"){ w.dir = ""; w.stop = ""; delete w._near; findStops(i); }
+  if (f === "dir"){
+    w.dir = el.value; w.stop = ""; filters[i] = "";
+    const d = routeData[w.route.toLowerCase()].dirs.find(x => x.dir === w.dir);
+    w.dest = d ? d.dest : "";
+    if (w._near && d){ const n = [...d.stops].sort((a, b) => dist(a, w._near) - dist(b, w._near))[0]; if (n) setStop(w, n); }
+    renderForm();
+  }
+  if (f === "stop"){
+    const d = routeData[w.route.toLowerCase()].dirs.find(x => x.dir === w.dir);
+    const s = d && d.stops.find(x => x.id === el.value);
+    if (s) setStop(w, s); else w.stop = "";
+  }
+});
+$("setup").addEventListener("keydown", e => {
+  if (e.key === "Enter" && e.target.dataset.f === "route"){ e.preventDefault(); e.target.blur(); }
+});
+$("setup").addEventListener("submit", e => {
+  e.preventDefault();
+  const keep = draft.filter(w => w.route || w.stop);
+  const bad = keep.findIndex(w => !w.route || !w.dir || !w.stop || !w.from || !w.to || !w.days.length);
+  if (!keep.length){ $("formErr").textContent = "Add at least one bus: type a route number and press Find stops."; return; }
+  if (bad >= 0){
+    const w = keep[bad];
+    $("formErr").textContent = `Bus ${draft.indexOf(w) + 1}: ` + (!w.dir ? "choose a direction." : !w.stop ? "choose your stop." : !w.days.length ? "pick at least one day." : "set the times.");
+    return;
+  }
+  watches = keep.map(w => {
+    const d = routeData[w.route.toLowerCase()]?.dirs.find(x => x.dir === w.dir);
+    return {route:w.route.toUpperCase(), dir:w.dir, dest:w.dest || (d ? d.dest : ""), stop:w.stop, stopName:w.stopName, letter:w.letter,
+            from:w.from, to:w.to, days:[...w.days].sort(), walk:w.walk};
+  });
+  store.set("bw.watches", watches);
+  override = {};
+  showLive();
+});
+
+/* =================== SCHEDULE =================== */
+const toMin = t => { const [h, m] = t.split(":").map(Number); return h * 60 + m; };
+function isActive(w, d = new Date()){
+  const m = d.getHours() * 60 + d.getMinutes(), f = toMin(w.from), t = toMin(w.to), day = d.getDay();
+  if (f <= t) return w.days.includes(day) && m >= f && m < t;
+  return (w.days.includes(day) && m >= f) || (w.days.includes((day + 6) % 7) && m < t);   // overnight window
+}
+function nextStartText(w){
+  const now = new Date();
+  for (let k = 0; k < 8; k++){
+    const d = new Date(now); d.setDate(d.getDate() + k);
+    const [h, m] = w.from.split(":").map(Number); d.setHours(h, m, 0, 0);
+    if (d > now && w.days.includes(d.getDay()))
+      return `Live from ${w.from}${k === 0 ? " today" : k === 1 ? " tomorrow" : " " + DAY[d.getDay()]}`;
+  }
+  return "No days chosen";
+}
+const visible = () => watches.map((w, i) => i).filter(i => isActive(watches[i]) || (override[i] || 0) > Date.now());
+
+/* =================== LIVE DATA =================== */
+async function poll(){
+  if (!watches || $("live").hidden) return;
+  const routes = [...new Set(visible().map(i => watches[i].route.toLowerCase()))];
+  await Promise.all(routes.map(async r => {
+    try{
+      const res = await fetch(`${API}/Line/${encodeURIComponent(r)}/Arrivals`, {cache:"no-store"});
+      if (!res.ok) throw new Error(res.status);
+      live[r] = {preds: await res.json(), ok: Date.now(), err: null};
+    }catch(e){ live[r] = {...(live[r] || {preds: []}), err: e}; }
+  }));
+  // Record each bus's predicted arrival so we can see trends
+  const now = Date.now();
+  for (const i of visible()){
+    for (const b of analyse(watches[i])){
+      const k = watches[i].stop + "|" + b.vid, h = (hist[k] ||= []);
+      if (!h.length || now - h[h.length - 1][0] > 15000) h.push([now, b.eta]);
+    }
+  }
+  for (const k in hist){ hist[k] = hist[k].filter(([t]) => now - t < 15 * 60000); if (!hist[k].length) delete hist[k]; }
+  store.set("bw.hist", hist);
+  render();
+}
+
+function analyse(w){
+  const L = live[w.route.toLowerCase()]; if (!L) return [];
+  const byBus = {};
+  for (const p of L.preds) (byBus[p.vehicleId] ||= []).push(p);
+  const out = [];
+  for (const [vid, preds] of Object.entries(byBus)){
+    const here = preds.find(p => p.naptanId === w.stop);
+    if (!here) continue;
+    const eta = Date.parse(here.expectedArrival);
+    if (eta < Date.now() - 30000) continue;
+    const before = preds.filter(p => p.direction === here.direction && Date.parse(p.expectedArrival) < eta)
+      .sort((a, b) => Date.parse(a.expectedArrival) - Date.parse(b.expectedArrival));
+    out.push({vid, eta, dest: here.destinationName, stopsAway: before.length, nextStop: before[0] ? before[0].stationName : null});
+  }
+  return out.sort((a, b) => a.eta - b.eta);
+}
+
+/* =================== RENDER =================== */
+const clock = ms => new Date(ms).toLocaleTimeString("en-GB", {hour:"2-digit", minute:"2-digit"});
+const minsTo = ms => Math.max(0, Math.floor((ms - Date.now()) / 60000));
+const plural = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
+
+function trend(w, b){
+  const h = hist[w.stop + "|" + b.vid]; if (!h || h.length < 2) return null;
+  const now = Date.now(), base = h.find(([t]) => now - t <= TREND_WINDOW);
+  if (!base || now - base[0] < 90000) return null;
+  return {drift: (b.eta - base[1]) / 60000, over: Math.round((now - base[0]) / 60000)};
+}
+function trendChip(w, b, short){
+  const t = trend(w, b);
+  if (!t) return `<span class="chip wait">Watching…</span>`;
+  const d = Math.round(t.drift);
+  if (t.drift >= 1) return `<span class="chip slip">▲ Slipping +${d} min${short ? "" : " in " + t.over + " min"}</span>`;
+  if (t.drift <= -1) return `<span class="chip catch">▼ Catching up ${-d} min</span>`;
+  return `<span class="chip ontrack">● On track</span>`;
+}
+function advice(w, list, short){
+  const [b1, b2] = list; if (!b1) return "";
+  const gap = b2 ? (b2.eta - b1.eta) / 60000 : null, t1 = trend(w, b1);
+  if (b2 && gap <= 3) return `<div class="advice tip"><b>The next two buses are bunched</b>${short ? "" : `The next one is only ${Math.max(1, Math.round(gap))} min behind and may have more room.`}</div>`;
+  if (gap === null || gap >= 15) return `<div class="advice warn"><b>Try not to miss this one</b>${short ? "" : gap === null ? "No other bus is predicted yet." : `The one after is ${Math.round(gap)} min later.`}</div>`;
+  if (t1 && t1.drift >= 2) return `<div class="advice warn"><b>The next bus is being held up</b>${short ? "" : `Its arrival has moved back ${Math.round(t1.drift)} min recently.`}</div>`;
+  return "";
+}
+function strip(list){
+  const max = Math.max(10, ...list.map(b => b.stopsAway)) + 1;
+  let html = `<div class="strip"><div class="rail"></div>`;
+  for (let s = 5; s < max; s += 5) html += `<div class="tick" style="left:${100 - s / max * 100}%"></div>`;
+  let prev = null;
+  list.forEach((b, i) => {
+    const left = Math.max(3, 100 - b.stopsAway / max * 100 - (b.stopsAway === 0 ? 5 : 0));
+    const up = prev !== null && Math.abs(prev - left) < 12 && i % 2;
+    html += `<div class="bus${up ? " up" : ""}" style="left:${left}%" title="${minsTo(b.eta) === 0 ? "Due" : minsTo(b.eta) + " min"}: ${plural(b.stopsAway, "stop")} away"><i>${minsTo(b.eta) === 0 ? "Due" : minsTo(b.eta) + "m"}</i></div>`;
+    prev = left;
+  });
+  return html + `<div class="you" title="Your stop"></div></div><div class="ends"><span>${max - 1} stops back</span><b>Your stop</b></div>`;
+}
+
+function cardHTML(w, size){
+  const L = live[w.route.toLowerCase()];
+  const counts = {1:4, 2:3, 3:3};
+  const list = analyse(w).slice(0, counts[size]);
+  const b1 = list[0];
+  let html = `<article class="card">
+    <div class="c-head"><div class="badge">${esc(w.route)}</div>
+      <div class="c-title"><b>To ${esc(w.dest)}</b><span>${esc(w.stopName)}${w.letter ? " · Stop " + esc(w.letter) : ""}</span></div></div>`;
+  if (!b1){
+    return html + `<p class="empty">${L && L.ok ? "No buses predicted in the next 30 minutes." : L && L.err ? "Can't reach TfL right now." : "Loading live times…"}</p></article>`;
+  }
+  const m = minsTo(b1.eta);
+  const spare = (b1.eta - Date.now()) / 1000 - w.walk * 60;
+  const leave = spare < 0 ? `<span class="chip go">Too tight, get the next</span>`
+    : spare < 120 ? `<span class="chip soon">Leave now</span>`
+    : `<span class="chip fine">Leave in ${Math.floor(spare / 60)} min</span>`;
+  html += `<div class="big${m === 0 ? " due" : ""}">${m === 0 ? "Due" : m + "<small>min</small>"}</div>
+    <div class="sub"><span>Arrives ${clock(b1.eta)}</span><span>${plural(b1.stopsAway, "stop")} away</span>${size < 3 && b1.nextStop ? `<span>Next stop: ${esc(b1.nextStop)}</span>` : ""}</div>
+    <div class="chips">${leave}${trendChip(w, b1, size === 3)}</div>
+    ${advice(w, list, size === 3)}
+    ${strip(list)}`;
+  if (size === 3){
+    const rest = list.slice(1);
+    html += rest.length ? `<div class="then">Then ${rest.map((b, k) => `<b>${minsTo(b.eta)} min</b>`).join(" · ")}</div>` : "";
+  } else {
+    html += `<ul class="buses">${list.map((b, i) => `<li>
+      <div class="info"><div class="where">${plural(b.stopsAway, "stop")} away${size === 1 && b.nextStop ? " · next stop " + esc(b.nextStop) : ""}${i ? ` · ${Math.round((b.eta - list[i - 1].eta) / 60000)} min after the one before` : ""}</div>${trendChip(w, b, size > 1)}</div>
+      <div class="mins">${minsTo(b.eta) === 0 ? "Due" : minsTo(b.eta) + "m"}<span>${clock(b.eta)}</span></div></li>`).join("")}</ul>`;
+  }
+  return html + `</article>`;
+}
+
+function render(){
+  if (!watches || $("live").hidden) return;
+  const vis = visible(), n = vis.length;
+  document.body.classList.toggle("wide", n > 1 && window.innerWidth >= 760);
+  $("cards").className = "cards n" + Math.min(3, Math.max(1, n));
+  $("cards").innerHTML = n ? vis.map(i => cardHTML(watches[i], Math.min(3, n))).join("")
+    : `<div class="none"><h2>Nothing due right now</h2><p>Your buses show here during the hours you chose.</p></div>`;
+  const asleep = watches.map((w, i) => i).filter(i => !vis.includes(i));
+  $("sleeping").innerHTML = asleep.map(i => { const w = watches[i]; return `<div class="sleep">
+      <div class="badge">${esc(w.route)}</div>
+      <div class="c-title"><b>${esc(w.stopName)}</b><span>${nextStartText(w)}</span></div>
+      <button class="btn" data-show="${i}">Show now</button></div>`; }).join("");
+
+  const states = vis.map(i => live[watches[i].route.toLowerCase()]).filter(Boolean);
+  const err = states.some(s => s.err), oks = states.map(s => s.ok || 0).filter(Boolean);
+  const age = oks.length ? Math.round((Date.now() - Math.min(...oks)) / 1000) : null;
+  $("status").innerHTML = !n ? `<span class="dot stale"></span>Paused until your next window`
+    : `<span class="dot ${err ? "err" : age !== null && age > 60 ? "stale" : ""}"></span>` +
+      (err ? "Can't reach TfL. Retrying…" : age === null ? "Connecting…" : `Live · updated ${age}s ago`);
+}
+$("sleeping").addEventListener("click", e => {
+  const b = e.target.closest("[data-show]"); if (!b) return;
+  override[+b.dataset.show] = Date.now() + 30 * 60000;   // show for the next 30 minutes
+  render(); poll();
+});
+
+function showLive(){
+  $("setup").hidden = true; $("live").hidden = false; $("editBtn").hidden = false;
+  render(); poll();
+}
+$("editBtn").onclick = openSetup;
+$("refresh").onclick = poll;
+window.addEventListener("resize", render);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) poll(); });
+
+let lastVis = "";
+setInterval(() => {
+  render();
+  const v = watches ? visible().join(",") : "";
+  if (v !== lastVis){ lastVis = v; poll(); }    // a time window just opened or closed
+}, 1000);
+setInterval(poll, POLL);
+
+if (watches && watches.length) showLive(); else openSetup();
+</script>
+</body>
+</html>
