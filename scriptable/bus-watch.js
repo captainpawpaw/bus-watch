@@ -83,6 +83,8 @@ async function pick(title, items, label, sub) {
   return chosen;
 }
 
+const hoursText = w => w.from === w.to ? "All day" : `${w.from}–${w.to}`;
+
 function daysText(days) {
   const k = [...days].sort().join(",");
   if (k === "1,2,3,4,5") return "Mon–Fri";
@@ -133,7 +135,7 @@ async function addBus() {
   if (!stop) return;
 
   // 4. Hours
-  a = new Alert(); a.title = "When should it show live times?"; a.message = "24-hour times, e.g. 07:00 and 09:00";
+  a = new Alert(); a.title = "When should it show live times?"; a.message = "24-hour times, e.g. 07:00 and 09:00.\nUse the same time twice for all day.";
   a.addTextField("From", "07:00"); a.addTextField("Until", "09:00"); a.addAction("Next"); a.addCancelAction("Cancel");
   if (await a.presentAlert() === -1) return;
   const tidy = t => { const m = t.trim().match(/^(\d{1,2})[:.]?(\d{2})$/); return m && +m[1] < 24 && +m[2] < 60 ? m[1].padStart(2, "0") + ":" + m[2] : null; };
@@ -168,7 +170,7 @@ async function setupMenu() {
     const a = new Alert();
     a.title = "Bus Watch";
     a.message = watches.length
-      ? watches.map((w, i) => `${i + 1}. ${w.route} from ${w.stopName}${w.letter ? " (" + w.letter + ")" : ""}\n    ${w.from}–${w.to}, ${daysText(w.days)}, ${w.walk} min walk`).join("\n")
+      ? watches.map((w, i) => `${i + 1}. ${w.route} from ${w.stopName}${w.letter ? " (" + w.letter + ")" : ""}\n    ${hoursText(w)}, ${daysText(w.days)}, ${w.walk} min walk`).join("\n")
       : `No buses yet. Add up to ${MAX}.`;
     const acts = [];
     if (watches.length < MAX) { a.addAction("Add a bus"); acts.push("add"); }
@@ -184,7 +186,7 @@ async function setupMenu() {
     const act = acts[r];
     if (act === "add") await addBus();
     if (act === "remove") {
-      const w = await pick("Remove which bus?", watches, w => `${w.route} from ${w.stopName}`, w => `${w.from}–${w.to}, ${daysText(w.days)}`);
+      const w = await pick("Remove which bus?", watches, w => `${w.route} from ${w.stopName}`, w => `${hoursText(w)}, ${daysText(w.days)}`);
       if (w) { watches = watches.filter(x => x !== w); writeJSON(CFG, watches); }
     }
     if (act === "live") { const wd = await buildWidget("large", null, false, 2); await wd.presentLarge(); }
@@ -198,7 +200,8 @@ async function setupMenu() {
 const toMin = t => { const [h, m] = t.split(":").map(Number); return h * 60 + m; };
 function isActive(w, d = new Date()) {
   const m = d.getHours() * 60 + d.getMinutes(), f = toMin(w.from), t = toMin(w.to), day = d.getDay();
-  if (f <= t) return w.days.includes(day) && m >= f && m < t;
+  if (f === t) return w.days.includes(day);   // same start and end = all day
+  if (f < t) return w.days.includes(day) && m >= f && m < t;
   return (w.days.includes(day) && m >= f) || (w.days.includes((day + 6) % 7) && m < t);
 }
 function nextStart(w) {
@@ -212,7 +215,8 @@ function nextStart(w) {
 }
 function nextStartText(w) {
   const n = nextStart(w); if (!n) return "No days set";
-  return `From ${w.from}${n.k === 0 ? " today" : n.k === 1 ? " tomorrow" : " " + DAY[n.date.getDay()]}`;
+  const when = n.k === 0 ? "today" : n.k === 1 ? "tomorrow" : DAY[n.date.getDay()];
+  return w.from === w.to ? `All day ${when}` : `From ${w.from} ${when}`;
 }
 
 /* ===================== LIVE DATA ===================== */
@@ -222,6 +226,28 @@ async function fetchLine(route) {
     const j = await new Request(`${API}/Line/${encodeURIComponent(route.toLowerCase())}/Arrivals`).loadJSON();
     return Array.isArray(j) ? j : null;
   } catch (e) { return null; }
+}
+
+// TfL service status (diversions, closed stops) for several routes in one request
+async function fetchStatus(routes) {
+  const out = {};
+  if (!routes.length) return out;
+  try {
+    const j = await new Request(`${API}/Line/${routes.map(r => encodeURIComponent(r.toLowerCase())).join(",")}/Status`).loadJSON();
+    const now = Date.now();
+    const current = s => !s.validityPeriods || !s.validityPeriods.length ||
+      s.validityPeriods.some(v => Date.parse(v.fromDate) <= now && now <= Date.parse(v.toDate));
+    for (const l of Array.isArray(j) ? j : [])
+      out[l.id] = (l.lineStatuses || []).filter(s => s.statusSeverity !== 10 && s.reason && current(s)).map(s => s.reason.trim());
+  } catch (e) { /* status is a bonus; live times still work without it */ }
+  return out;
+}
+// The most relevant disruption for this watch: one that names your stop comes first
+function disruptionFor(w, status) {
+  const list = status[w.route.toLowerCase()] || [];
+  if (!list.length) return null;
+  const mine = list.find(r => r.toLowerCase().includes(w.stopName.toLowerCase()));
+  return { text: (mine ? "Your stop: " : "") + (mine || list[0]), mine: !!mine, more: list.length - 1 };
 }
 
 function analyse(w, preds) {
@@ -261,9 +287,15 @@ function trendText(w, b) {
   if (t <= -1) return { text: `▼ Catching up ${Math.round(-t)}m`, color: C.info };
   return { text: "● On track", color: C.ok };
 }
-function leaveText(w, b) {
-  const spare = (b.eta - Date.now()) / 1000 - w.walk * 60;
-  if (spare < 0) return { text: "Too tight", color: C.accent };
+const spareSecs = (w, b) => (b.eta - Date.now()) / 1000 - w.walk * 60;
+const leaveIn = s => s < 120 ? "leave now" : `leave in ${Math.floor(s / 60)}m`;
+function leaveText(w, b, list) {
+  const spare = spareSecs(w, b);
+  if (spare < 0) {
+    // Can't make this one: point at the first bus you can still catch
+    const nx = (list || []).find(x => x.eta > b.eta && spareSecs(w, x) >= 0);
+    return { text: nx ? `Too tight · next: ${leaveIn(spareSecs(w, nx))}` : "Too tight", color: C.accent };
+  }
   if (spare < 120) return { text: "Leave now", color: C.warn };
   return { text: `Leave in ${Math.floor(spare / 60)}m`, color: C.ok };
 }
@@ -321,10 +353,10 @@ function stripImage(list, width, height) {
   return ctx.getImage();
 }
 
-function txt(stack, s, size, color, bold) {
+function txt(stack, s, size, color, bold, lines = 1) {
   const t = stack.addText(s);
   t.font = bold ? Font.boldSystemFont(size) : Font.systemFont(size);
-  t.textColor = color; t.lineLimit = 1; t.minimumScaleFactor = 0.6;
+  t.textColor = color; t.lineLimit = lines; t.minimumScaleFactor = lines > 1 ? 1 : 0.6;
   return t;
 }
 function badge(stack, route, size) {
@@ -361,9 +393,10 @@ async function buildWidget(family, pinned, forceAll, minShow = 0) {
   // Fetch each route once
   const routes = [...new Set(active.map(p => p.w.route))];
   const data = {};
-  for (const r of routes) data[r] = await fetchLine(r);
+  const [status] = await Promise.all([fetchStatus(routes), ...routes.map(async r => { data[r] = await fetchLine(r); })]);
   for (const p of active) {
     p.buses = data[p.w.route] ? analyse(p.w, data[p.w.route]) : null;
+    p.alert = disruptionFor(p.w, status);
     if (p.buses) record(p.w, p.buses);
   }
   // Put the route with the soonest bus first, everywhere
@@ -403,8 +436,8 @@ async function buildWidget(family, pinned, forceAll, minShow = 0) {
     if (n === 1) {
       const p = active[0], b = p.buses && p.buses[0];
       if (!b) { txt(w, `${p.w.route} · none due`, 14, fg, true); return w; }
-      txt(w, `${p.w.route}  ${minsStr(b)}`, 16, fg, true);
-      txt(w, `${leaveText(p.w, b).text} · ${trendText(p.w, b).text}`, 12, fg, false);
+      txt(w, `${p.w.route}  ${minsStr(b)}${p.alert ? "  ⚠" : ""}`, 16, fg, true);
+      txt(w, `${leaveText(p.w, b, p.buses).text} · ${trendText(p.w, b).text}`, 12, fg, false);
       txt(w, p.buses[1] ? `next ${minsStr(p.buses[1])}` : "next not predicted yet", 12, fg, false);
       return w;
     }
@@ -452,9 +485,10 @@ async function buildWidget(family, pinned, forceAll, minShow = 0) {
     if (!b) { txt(w, p.buses ? "None due" : "No signal", 18, fg, true); }
     else {
       txt(w, minsStr(b), 34, mins(b) === 0 ? C.accent : fg, true);
-      const lv = leaveText(p.w, b); txt(w, lv.text, 12, lv.color, true);
+      const lv = leaveText(p.w, b, p.buses); txt(w, lv.text, 12, lv.color, true);
       const tr = trendText(p.w, b); txt(w, tr.text, 11, tr.color, false);
     }
+    if (p.alert) txt(w, "⚠ " + (p.alert.mine ? "Your stop affected" : "Route disrupted"), 10, C.warn, true);
     w.addSpacer();
     // The next incoming bus after this one, on any of your live routes
     const nx = upcoming[1];
@@ -475,13 +509,17 @@ async function buildWidget(family, pinned, forceAll, minShow = 0) {
     const h = s.addStack(); h.centerAlignContent(); h.spacing = 6;
     badge(h, p.w.route, mode === "xl" ? 18 : 14);
     txt(h, `${p.w.stopName}${p.w.letter ? " · " + p.w.letter : ""}${p.forced ? " · outside your hours" : ""}`, 11, muted, false);
+    if (p.alert) {
+      if (mode === "col") txt(s, "⚠ " + (p.alert.mine ? "Your stop affected" : "Route disrupted"), 10, C.warn, true);
+      else txt(s, "⚠ " + p.alert.text, mode === "xl" ? 11 : 10, C.warn, mode === "xl", mode === "xl" ? 3 : mode === "l" ? 2 : 1);
+    }
     const list = p.buses || [];
     const b = list[0];
     if (!b) { s.addSpacer(4); txt(s, p.buses ? "No buses in the next 30 min" : "Can't reach TfL", 13, muted, false); return s; }
     const big = { xl: 56, l: 36, m: 30, s: 24, col: n === 2 ? 30 : 24 }[mode];
     if (mode === "col") {
       txt(s, minsStr(b), big, mins(b) === 0 ? C.accent : fg, true);
-      const lv = leaveText(p.w, b); txt(s, lv.text, 11, lv.color, true);
+      const lv = leaveText(p.w, b, list); txt(s, lv.text, 11, lv.color, true);
       const tr = trendText(p.w, b); txt(s, tr.text, 10, tr.color, false);
       txt(s, list[1] ? "Next " + list.slice(1, 3).map(x => minsStr(x)).join(", ") : "Next: not predicted yet", 11, list[1] ? fg : muted, !!list[1]);
       return s;
@@ -489,7 +527,7 @@ async function buildWidget(family, pinned, forceAll, minShow = 0) {
     const row = s.addStack(); row.bottomAlignContent(); row.spacing = 8;
     txt(row, minsStr(b), big, mins(b) === 0 ? C.accent : fg, true);
     const side = row.addStack(); side.layoutVertically();
-    const lv = leaveText(p.w, b); txt(side, lv.text, 12, lv.color, true);
+    const lv = leaveText(p.w, b, list); txt(side, lv.text, 12, lv.color, true);
     const tr = trendText(p.w, b); txt(side, tr.text, 11, tr.color, false);
     if (mode !== "s") {
       const adv = adviceText(p.w, list.slice(0, 4));
@@ -521,11 +559,11 @@ async function buildWidget(family, pinned, forceAll, minShow = 0) {
     r.url = "https://tfl.gov.uk/bus/stop/" + p.w.stop;
     const bd = r.addStack(); bd.size = new Size(46, 0); badge(bd, p.w.route, 13);
     const mid = r.addStack(); mid.layoutVertically();
-    txt(mid, `${p.w.stopName}${p.w.letter ? " · " + p.w.letter : ""}${p.forced ? " · outside hours" : ""}`, 10, muted, false);
+    txt(mid, `${p.alert ? "⚠ " : ""}${p.w.stopName}${p.w.letter ? " · " + p.w.letter : ""}${p.forced ? " · outside hours" : ""}`, 10, p.alert ? C.warn : muted, false);
     const list = p.buses || [], b = list[0];
     if (!b) txt(mid, p.buses ? "None due in 30 min" : "Can't reach TfL", 11, muted, false);
     else {
-      const lv = leaveText(p.w, b), tr = trendText(p.w, b);
+      const lv = leaveText(p.w, b, list), tr = trendText(p.w, b);
       const st = mid.addStack(); st.spacing = 4;
       txt(st, lv.text, 11, lv.color, true); txt(st, "·", 11, muted, false); txt(st, tr.text, 10, tr.color, false);
     }

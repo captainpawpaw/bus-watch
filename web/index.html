@@ -7,6 +7,9 @@
 <meta name="apple-mobile-web-app-title" content="Bus Watch">
 <meta name="theme-color" content="#14161b">
 <title>Bus Watch</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Barlow:wght@400;500;600&display=swap">
 <style>
@@ -36,6 +39,7 @@ button{font:600 15px var(--body);cursor:pointer;color:var(--fg)}
 .btn{padding:8px 14px;border-radius:8px;border:1px solid var(--line);background:var(--surface)}
 .btn.primary{background:var(--fg);color:var(--bg);border-color:var(--fg)}
 .btn.ghost{background:transparent}
+.btn[aria-pressed="true"]{background:color-mix(in srgb,var(--ok) 15%,var(--surface));border-color:var(--ok);color:var(--ok)}
 .lbl{text-transform:uppercase;letter-spacing:.08em;font-size:12px;color:var(--muted);font-weight:600}
 
 /* ---------- Setup form ---------- */
@@ -55,6 +59,7 @@ select.stops{width:100%}
 .days button[aria-pressed="true"]{background:var(--fg);color:var(--bg);border-color:var(--fg)}
 .msg{margin:0;font-size:14px;color:var(--muted)}
 .msg.err{color:var(--accent)}
+.hint{font-size:13px;color:var(--muted)}
 .form-actions{display:flex;gap:10px;flex-wrap:wrap;justify-content:space-between;margin-top:4px}
 
 /* ---------- Live cards ---------- */
@@ -82,6 +87,10 @@ body.wide .cards.n3{grid-template-columns:repeat(3,minmax(0,1fr))}
 .fine,.ontrack{background:color-mix(in srgb,var(--ok) 15%,transparent);color:var(--ok)}
 .catch{background:color-mix(in srgb,var(--info) 15%,transparent);color:var(--info)}
 .wait{background:color-mix(in srgb,var(--muted) 15%,transparent);color:var(--muted)}
+.alert{margin:12px 0 0;padding:9px 12px;border-radius:10px;background:color-mix(in srgb,var(--warn) 12%,transparent);color:var(--fg);font-size:14px;line-height:1.4}
+.alert summary{cursor:pointer;font-weight:600;color:var(--warn)}
+.alert.mine summary{color:var(--accent)}
+.alert p{margin:8px 0 0;overflow-wrap:anywhere}
 .advice{margin:12px 0 0;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:var(--bg);font-size:14px;line-height:1.4}
 .n1 .advice{background:var(--surface)}
 .advice b{display:block}
@@ -113,7 +122,7 @@ ul.buses li{display:grid;grid-template-columns:1fr auto;align-items:center;gap:1
 .none{padding:24px 0 6px}
 .none h2{font-family:var(--display);font-size:30px;margin:0 0 4px}
 .none p{margin:0;color:var(--muted)}
-footer{margin-top:18px;display:flex;justify-content:space-between;align-items:center;gap:12px;color:var(--muted);font-size:13px}
+footer{margin-top:18px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;color:var(--muted);font-size:13px}
 .dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--ok);margin-right:6px;vertical-align:middle}
 .dot.stale{background:var(--warn)}.dot.err{background:var(--accent)}
 .note{color:var(--muted);font-size:12px;margin-top:12px;line-height:1.4}
@@ -132,9 +141,12 @@ footer{margin-top:18px;display:flex;justify-content:space-between;align-items:ce
   <div id="sleeping"></div>
   <footer>
     <span id="status"><span class="dot"></span>Connecting…</span>
-    <button class="btn" id="refresh">Refresh</button>
+    <div class="row">
+      <button class="btn" id="wake" aria-pressed="false" hidden>Keep screen on</button>
+      <button class="btn" id="refresh">Refresh</button>
+    </div>
   </footer>
-  <p class="note">"Slipping" means a bus's predicted arrival has been pushed back over the last few minutes; trends build up while the app is open. Powered by TfL Open Data.</p>
+  <p class="note">"Slipping" means a bus's predicted arrival has been pushed back over the last few minutes; trends build up while the app is open. ⚠ marks a TfL diversion or disruption on that route; tap it for details. Powered by TfL Open Data.</p>
 </main>
 
 <script>
@@ -154,6 +166,7 @@ let hist = store.get("bw.hist", {});
 let live = {};          // route -> {preds, ok, err}
 let override = {};      // watch index -> show-until time
 let routeData = {};     // route -> {dirs:[{dir,dest,stops}]} | {error}
+let status = {}, statusAt = 0;   // route -> current TfL disruption texts
 let draft = [], filters = {}, slotMsg = {};
 
 const blank = () => ({route:"", dir:"", dest:"", stop:"", stopName:"", letter:"", from:"07:00", to:"09:00", days:[1,2,3,4,5], walk:3});
@@ -226,7 +239,8 @@ function slotHTML(w, i){
         </select></div>
       <div class="field"><span>Show live times between</span>
         <div class="row"><input type="time" id="from-${i}" data-i="${i}" data-f="from" value="${w.from}"> <span>and</span>
-        <input type="time" id="to-${i}" data-i="${i}" data-f="to" value="${w.to}"></div></div>
+        <input type="time" id="to-${i}" data-i="${i}" data-f="to" value="${w.to}"></div>
+        <span class="hint">Set both to the same time to show it all day.</span></div>
       <div class="field"><span>On these days</span>
         <div class="days">${DAY_ORDER.map(d => `<button type="button" data-act="day" data-i="${i}" data-d="${d}" aria-pressed="${w.days.includes(d)}">${DAY[d]}</button>`).join("")}</div></div>
       <label class="field"><span>Walk from home to the stop</span>
@@ -365,7 +379,8 @@ $("setup").addEventListener("submit", e => {
 const toMin = t => { const [h, m] = t.split(":").map(Number); return h * 60 + m; };
 function isActive(w, d = new Date()){
   const m = d.getHours() * 60 + d.getMinutes(), f = toMin(w.from), t = toMin(w.to), day = d.getDay();
-  if (f <= t) return w.days.includes(day) && m >= f && m < t;
+  if (f === t) return w.days.includes(day);   // same start and end = all day
+  if (f < t) return w.days.includes(day) && m >= f && m < t;
   return (w.days.includes(day) && m >= f) || (w.days.includes((day + 6) % 7) && m < t);   // overnight window
 }
 function nextStartText(w){
@@ -373,8 +388,10 @@ function nextStartText(w){
   for (let k = 0; k < 8; k++){
     const d = new Date(now); d.setDate(d.getDate() + k);
     const [h, m] = w.from.split(":").map(Number); d.setHours(h, m, 0, 0);
-    if (d > now && w.days.includes(d.getDay()))
-      return `Live from ${w.from}${k === 0 ? " today" : k === 1 ? " tomorrow" : " " + DAY[d.getDay()]}`;
+    if (d > now && w.days.includes(d.getDay())){
+      const when = k === 0 ? "today" : k === 1 ? "tomorrow" : DAY[d.getDay()];
+      return w.from === w.to ? `Live all day ${when}` : `Live from ${w.from} ${when}`;
+    }
   }
   return "No days chosen";
 }
@@ -382,15 +399,15 @@ const visible = () => watches.map((w, i) => i).filter(i => isActive(watches[i]) 
 
 /* =================== LIVE DATA =================== */
 async function poll(){
-  if (!watches || $("live").hidden) return;
+  if (!watches || $("live").hidden || document.hidden) return;
   const routes = [...new Set(visible().map(i => watches[i].route.toLowerCase()))];
-  await Promise.all(routes.map(async r => {
+  await Promise.all([pollStatus(routes), ...routes.map(async r => {
     try{
       const res = await fetch(`${API}/Line/${encodeURIComponent(r)}/Arrivals`, {cache:"no-store"});
       if (!res.ok) throw new Error(res.status);
       live[r] = {preds: await res.json(), ok: Date.now(), err: null};
     }catch(e){ live[r] = {...(live[r] || {preds: []}), err: e}; }
-  }));
+  })]);
   // Record each bus's predicted arrival so we can see trends
   const now = Date.now();
   for (const i of visible()){
@@ -402,6 +419,28 @@ async function poll(){
   for (const k in hist){ hist[k] = hist[k].filter(([t]) => now - t < 15 * 60000); if (!hist[k].length) delete hist[k]; }
   store.set("bw.hist", hist);
   render();
+}
+
+// TfL service status (diversions, closed stops). Changes slowly, so check every 2 minutes.
+async function pollStatus(routes){
+  if (!routes.length || (Date.now() - statusAt < 120000 && routes.every(r => r in status))) return;
+  try{
+    const res = await fetch(`${API}/Line/${routes.map(encodeURIComponent).join(",")}/Status`, {cache:"no-store"});
+    if (!res.ok) return;
+    const now = Date.now();
+    const current = s => !s.validityPeriods?.length ||
+      s.validityPeriods.some(v => Date.parse(v.fromDate) <= now && now <= Date.parse(v.toDate));
+    routes.forEach(r => { status[r] = []; });
+    for (const l of await res.json())
+      status[l.id] = (l.lineStatuses || []).filter(s => s.statusSeverity !== 10 && s.reason && current(s)).map(s => s.reason.trim());
+    statusAt = now;
+  }catch{ /* status is a bonus; live times still work without it */ }
+}
+function alertHTML(w){
+  const list = status[w.route.toLowerCase()] || []; if (!list.length) return "";
+  const name = w.stopName.toLowerCase(), hits = r => r.toLowerCase().includes(name);
+  const sorted = [...list].sort((a, b) => hits(b) - hits(a)), mine = hits(sorted[0]);
+  return `<details class="alert${mine ? " mine" : ""}" data-k="alert"><summary>⚠ ${mine ? "Disruption at your stop" : `Route ${esc(w.route)} disruption`}${list.length > 1 ? ` (${list.length})` : ""}</summary>${sorted.map(r => `<p>${esc(r)}</p>`).join("")}</details>`;
 }
 
 function analyse(w){
@@ -452,32 +491,44 @@ function strip(list){
   const max = Math.max(10, ...list.map(b => b.stopsAway)) + 1;
   let html = `<div class="strip"><div class="rail"></div>`;
   for (let s = 5; s < max; s += 5) html += `<div class="tick" style="left:${100 - s / max * 100}%"></div>`;
-  let prev = null;
-  list.forEach((b, i) => {
+  let prev = null, prevUp = false;
+  list.forEach(b => {
     const left = Math.max(3, 100 - b.stopsAway / max * 100 - (b.stopsAway === 0 ? 5 : 0));
-    const up = prev !== null && Math.abs(prev - left) < 12 && i % 2;
-    html += `<div class="bus${up ? " up" : ""}" style="left:${left}%" title="${minsTo(b.eta) === 0 ? "Due" : minsTo(b.eta) + " min"}: ${plural(b.stopsAway, "stop")} away"><i>${minsTo(b.eta) === 0 ? "Due" : minsTo(b.eta) + "m"}</i></div>`;
+    // Lift a marker above the line when it would cover the one before it
+    const up = prev !== null && Math.abs(prev - left) < 12 && !prevUp;
+    prevUp = up;
+    html += `<div class="bus${up ? " up" : ""}" data-k="m${esc(b.vid)}" style="left:${left}%" title="${minsTo(b.eta) === 0 ? "Due" : minsTo(b.eta) + " min"}: ${plural(b.stopsAway, "stop")} away"><i>${minsTo(b.eta) === 0 ? "Due" : minsTo(b.eta) + "m"}</i></div>`;
     prev = left;
   });
   return html + `<div class="you" title="Your stop"></div></div><div class="ends"><span>${max - 1} stops back</span><b>Your stop</b></div>`;
 }
 
-function cardHTML(w, size){
+function leaveChips(w, all){
+  const spare = b => (b.eta - Date.now()) / 1000 - w.walk * 60;
+  const when = s => s < 120 ? "leave now" : `leave in ${Math.floor(s / 60)} min`;
+  const s1 = spare(all[0]);
+  if (s1 >= 0) return `<span class="chip ${s1 < 120 ? "soon" : "fine"}">${when(s1)[0].toUpperCase() + when(s1).slice(1)}</span>`;
+  // Can't make this one: point at the first bus you can still catch
+  const nx = all.find(x => x.eta > all[0].eta && spare(x) >= 0);
+  return `<span class="chip go">Too tight</span>` + (nx
+    ? `<span class="chip ${spare(nx) < 120 ? "soon" : "fine"}">For the ${clock(nx.eta)} bus, ${when(spare(nx))}</span>`
+    : `<span class="chip wait">No later bus predicted yet</span>`);
+}
+
+function cardHTML(w, size, idx){
   const L = live[w.route.toLowerCase()];
   const counts = {1:4, 2:3, 3:3};
-  const list = analyse(w).slice(0, counts[size]);
+  const all = analyse(w), list = all.slice(0, counts[size]);
   const b1 = list[0];
-  let html = `<article class="card">
+  let html = `<article class="card" data-k="c${idx}">
     <div class="c-head"><div class="badge">${esc(w.route)}</div>
-      <div class="c-title"><b>To ${esc(w.dest)}</b><span>${esc(w.stopName)}${w.letter ? " · Stop " + esc(w.letter) : ""}</span></div></div>`;
+      <div class="c-title"><b>To ${esc(w.dest)}</b><span>${esc(w.stopName)}${w.letter ? " · Stop " + esc(w.letter) : ""}</span></div></div>
+    ${alertHTML(w)}`;
   if (!b1){
     return html + `<p class="empty">${L && L.ok ? "No buses predicted in the next 30 minutes." : L && L.err ? "Can't reach TfL right now." : "Loading live times…"}</p></article>`;
   }
   const m = minsTo(b1.eta);
-  const spare = (b1.eta - Date.now()) / 1000 - w.walk * 60;
-  const leave = spare < 0 ? `<span class="chip go">Too tight, get the next</span>`
-    : spare < 120 ? `<span class="chip soon">Leave now</span>`
-    : `<span class="chip fine">Leave in ${Math.floor(spare / 60)} min</span>`;
+  const leave = leaveChips(w, all);
   html += `<div class="big${m === 0 ? " due" : ""}">${m === 0 ? "Due" : m + "<small>min</small>"}</div>
     <div class="sub"><span>Arrives ${clock(b1.eta)}</span><span>${plural(b1.stopsAway, "stop")} away</span>${size < 3 && b1.nextStop ? `<span>Next stop: ${esc(b1.nextStop)}</span>` : ""}</div>
     <div class="chips">${leave}${trendChip(w, b1, size === 3)}</div>
@@ -487,11 +538,43 @@ function cardHTML(w, size){
     const rest = list.slice(1);
     html += rest.length ? `<div class="then">Then ${rest.map((b, k) => `<b>${minsTo(b.eta)} min</b>`).join(" · ")}</div>` : "";
   } else {
-    html += `<ul class="buses">${list.map((b, i) => `<li>
+    html += `<ul class="buses">${list.map((b, i) => `<li data-k="l${esc(b.vid)}">
       <div class="info"><div class="where">${plural(b.stopsAway, "stop")} away${size === 1 && b.nextStop ? " · next stop " + esc(b.nextStop) : ""}${i ? ` · ${Math.round((b.eta - list[i - 1].eta) / 60000)} min after the one before` : ""}</div>${trendChip(w, b, size > 1)}</div>
       <div class="mins">${minsTo(b.eta) === 0 ? "Due" : minsTo(b.eta) + "m"}<span>${clock(b.eta)}</span></div></li>`).join("")}</ul>`;
   }
   return html + `</article>`;
+}
+
+/* Update the page in place instead of rebuilding it, so bus markers glide,
+   open disruption notes stay open, and nothing flickers. Children with
+   data-k are matched by key, the rest by position. */
+function patch(parent, html){
+  const t = document.createElement("template"); t.innerHTML = html;
+  morphChildren(parent, t.content);
+}
+const keyOf = n => n.nodeType === 1 ? n.getAttribute("data-k") : null;
+const sameKind = (a, b) => a.nodeType === b.nodeType && a.nodeName === b.nodeName;
+function morphChildren(a, b){
+  const byKey = new Map();
+  for (const n of a.childNodes){ const k = keyOf(n); if (k) byKey.set(k, n); }
+  let cur = a.firstChild;
+  for (const n of [...b.childNodes]){
+    const k = keyOf(n);
+    let m = k ? byKey.get(k) : (cur && !keyOf(cur) ? cur : null);
+    if (m && !sameKind(m, n)) m = null;
+    if (m){
+      if (k) byKey.delete(k);
+      if (m === cur) cur = cur.nextSibling; else a.insertBefore(m, cur);
+      morph(m, n);
+    } else a.insertBefore(n, cur);
+  }
+  while (cur){ const nx = cur.nextSibling; a.removeChild(cur); cur = nx; }
+}
+function morph(a, b){
+  if (a.nodeType !== 1){ if (a.nodeValue !== b.nodeValue) a.nodeValue = b.nodeValue; return; }
+  for (const {name} of [...a.attributes]) if (!b.hasAttribute(name) && name !== "open") a.removeAttribute(name);
+  for (const {name, value} of [...b.attributes]) if (a.getAttribute(name) !== value) a.setAttribute(name, value);
+  morphChildren(a, b);
 }
 
 function render(){
@@ -499,18 +582,20 @@ function render(){
   const vis = visible(), n = vis.length;
   document.body.classList.toggle("wide", n > 1 && window.innerWidth >= 760);
   $("cards").className = "cards n" + Math.min(3, Math.max(1, n));
-  $("cards").innerHTML = n ? vis.map(i => cardHTML(watches[i], Math.min(3, n))).join("")
-    : `<div class="none"><h2>Nothing due right now</h2><p>Your buses show here during the hours you chose.</p></div>`;
+  patch($("cards"), n ? vis.map(i => cardHTML(watches[i], Math.min(3, n), i)).join("")
+    : `<div class="none" data-k="none"><h2>Nothing due right now</h2><p>Your buses show here during the hours you chose.</p></div>`);
   const asleep = watches.map((w, i) => i).filter(i => !vis.includes(i));
-  $("sleeping").innerHTML = asleep.map(i => { const w = watches[i]; return `<div class="sleep">
+  patch($("sleeping"), asleep.map(i => { const w = watches[i]; return `<div class="sleep" data-k="s${i}">
       <div class="badge">${esc(w.route)}</div>
       <div class="c-title"><b>${esc(w.stopName)}</b><span>${nextStartText(w)}</span></div>
-      <button class="btn" data-show="${i}">Show now</button></div>`; }).join("");
+      <button class="btn" data-show="${i}">Show now</button></div>`; }).join(""));
 
   const states = vis.map(i => live[watches[i].route.toLowerCase()]).filter(Boolean);
   const err = states.some(s => s.err), oks = states.map(s => s.ok || 0).filter(Boolean);
   const age = oks.length ? Math.round((Date.now() - Math.min(...oks)) / 1000) : null;
+  const lastOk = oks.length ? clock(Math.min(...oks)) : null;
   $("status").innerHTML = !n ? `<span class="dot stale"></span>Paused until your next window`
+    : !navigator.onLine ? `<span class="dot err"></span>Offline${lastOk ? " · times from " + lastOk : ""}`
     : `<span class="dot ${err ? "err" : age !== null && age > 60 ? "stale" : ""}"></span>` +
       (err ? "Can't reach TfL. Retrying…" : age === null ? "Connecting…" : `Live · updated ${age}s ago`);
 }
@@ -520,14 +605,37 @@ $("sleeping").addEventListener("click", e => {
   render(); poll();
 });
 
+/* Keep the screen on while you watch (where the browser supports it) */
+let wakeWanted = store.get("bw.wake", false), wakeLock = null, wakeBusy = false;
+async function syncWake(){
+  const btn = $("wake");
+  if (!("wakeLock" in navigator)){ btn.hidden = true; return; }
+  btn.hidden = false;
+  btn.setAttribute("aria-pressed", wakeWanted);
+  btn.textContent = wakeWanted ? "Screen stays on" : "Keep screen on";
+  const want = wakeWanted && !document.hidden && !$("live").hidden;
+  if (wakeBusy) return;
+  wakeBusy = true;
+  try{
+    if (want && !wakeLock){
+      wakeLock = await navigator.wakeLock.request("screen");
+      wakeLock.addEventListener("release", () => { wakeLock = null; });
+    } else if (!want && wakeLock){ await wakeLock.release(); wakeLock = null; }
+  }catch{ /* refused, e.g. low battery mode */ }
+  wakeBusy = false;
+}
+$("wake").onclick = () => { wakeWanted = !wakeWanted; store.set("bw.wake", wakeWanted); syncWake(); };
+
 function showLive(){
   $("setup").hidden = true; $("live").hidden = false; $("editBtn").hidden = false;
-  render(); poll();
+  render(); poll(); syncWake();
 }
-$("editBtn").onclick = openSetup;
+$("editBtn").onclick = () => { openSetup(); syncWake(); };
 $("refresh").onclick = poll;
 window.addEventListener("resize", render);
-document.addEventListener("visibilitychange", () => { if (!document.hidden) poll(); });
+document.addEventListener("visibilitychange", () => { if (!document.hidden) poll(); syncWake(); });
+window.addEventListener("online", poll);
+window.addEventListener("offline", render);
 
 let lastVis = "";
 setInterval(() => {
@@ -538,6 +646,7 @@ setInterval(() => {
 setInterval(poll, POLL);
 
 if (watches && watches.length) showLive(); else openSetup();
+if ("serviceWorker" in navigator && location.protocol !== "file:") navigator.serviceWorker.register("sw.js").catch(() => {});
 </script>
 </body>
 </html>
