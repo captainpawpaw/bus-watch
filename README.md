@@ -15,4 +15,11 @@ TfL diversions and disruptions are flagged on each route, with ones that name yo
 Set the same start and end time to watch a bus all day.
 Web app only: smooth live updates, and a "Keep screen on" option while you watch.
 
+The web app also covers TfL trains: Tube, Elizabeth line, Overground, DLR and trams. Pick the line,
+your station and platform, and it shows the next trains with where they're heading and where they are now.
+Turn on "Alert me when it's time to leave" for a chime and notification when it's time to set off.
+Alerts work while the app is open (pair them with "Keep screen on"); phones pause web apps in the background.
+
+Hosting with GitHub Pages: the root `index.html` forwards to `web/`, so the site address opens the app.
+
 Live data: TfL Open Data (api.tfl.gov.uk).
