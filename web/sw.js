@@ -1,7 +1,7 @@
 // Bus Watch service worker: lets the app open offline and install to the Home Screen.
 // App files are fetched fresh when online (so updates show straight away) and cached for offline.
 // Live TfL data is never cached: stale bus times are worse than none.
-const CACHE = "bus-watch-v1";
+const CACHE = "bus-watch-v2";
 const SHELL = ["./", "index.html", "manifest.webmanifest", "icon-192.png", "icon-512.png", "apple-touch-icon.png"];
 
 self.addEventListener("install", e => {
@@ -21,4 +21,13 @@ self.addEventListener("fetch", e => {
     if (res.ok || res.type === "opaque") { const copy = res.clone(); caches.open(CACHE).then(c => c.put(e.request, copy)); }
     return res;
   }).catch(() => caches.match(e.request, {ignoreSearch: true})));
+});
+
+// Tapping a leave-now notification brings the app back to the front
+self.addEventListener("notificationclick", e => {
+  e.notification.close();
+  e.waitUntil(self.clients.matchAll({type: "window", includeUncontrolled: true}).then(list => {
+    const open = list.find(c => "focus" in c);
+    return open ? open.focus() : self.clients.openWindow("./");
+  }));
 });
