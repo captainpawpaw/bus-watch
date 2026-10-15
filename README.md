@@ -30,6 +30,9 @@ when to leave; the app remembers which ones you've minimised. Bus cards show the
 "Likely quieter" estimate as the widget, and Tube and Elizabeth line stations show TfL's live station
 busyness (compared with that station's usual busiest time).
 
+Tap a journey's title in "Edit my journeys" to give it your own name (e.g. "Home to work"). When you type in
+the stop or station search, matches appear underneath; tap one to choose it.
+
 Hosting with GitHub Pages: the root `index.html` forwards to `web/`, so the site address opens the app.
 
 Live data: TfL Open Data (api.tfl.gov.uk).

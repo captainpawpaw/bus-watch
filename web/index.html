@@ -61,6 +61,13 @@ select.stops{width:100%}
 .msg.err{color:var(--accent)}
 .hint{font-size:13px;color:var(--muted)}
 .hint:empty{display:none}
+.matches{display:grid;gap:6px}
+.match{text-align:left;padding:10px 12px;border-radius:8px;border:1px solid var(--line);background:var(--surface);font:500 15px var(--body)}
+.match{display:flex;justify-content:space-between;align-items:center;gap:8px;border-color:color-mix(in srgb,var(--accent) 45%,var(--line))}
+.match::after{content:"Choose ›";font-size:13px;font-weight:600;color:var(--accent);flex:none}
+.jname{font:700 22px var(--display);color:var(--fg);background:transparent;border:0;border-bottom:1px dashed var(--line);border-radius:0;padding:2px 0;min-width:0;flex:1;margin-right:10px}
+.jname:focus{border-bottom-color:var(--accent);outline:none}
+.jname::placeholder{color:var(--fg);opacity:1}
 .seg{display:flex;gap:0;border:1px solid var(--line);border-radius:10px;padding:3px;background:var(--bg);width:max-content;max-width:100%}
 .seg button{border:0;background:transparent;padding:7px 14px;border-radius:7px;font-size:14px}
 .seg button[aria-pressed="true"]{background:var(--fg);color:var(--bg)}
@@ -130,6 +137,7 @@ ul.buses li{display:grid;grid-template-columns:1fr auto;align-items:center;gap:1
 .mins span{display:block;font:500 12px var(--body);color:var(--muted)}
 .then{margin-top:10px;font-size:14px;color:var(--muted)}
 .then b{color:var(--fg)}
+.then b.far{font:800 28px var(--display);vertical-align:-2px}
 .empty{color:var(--muted);margin:12px 0 0}
 /* Sleeping cards (outside chosen hours) */
 .sleep{display:flex;align-items:center;gap:10px;padding:12px 14px;border-radius:12px;border:1px dashed var(--line);margin-top:10px}
@@ -211,7 +219,7 @@ let minimised = new Set(store.get("bw.min", []));   // journeys shown as a singl
 let draft = [], filters = {}, slotMsg = {};
 
 const isRail = w => w.mode === "rail";
-const blank = () => ({mode:"bus", route:"", lineName:"", dir:"", dest:"", stop:"", stopName:"", letter:"", platform:"",
+const blank = () => ({name:"", mode:"bus", route:"", lineName:"", dir:"", dest:"", stop:"", stopName:"", letter:"", platform:"",
   from:"07:00", to:"09:00", days:[1,2,3,4,5], walk:3, alert:false});
 const cleanStation = n => String(n || "").replace(/\s+(Underground|Rail|DLR) Station$/i, "").replace(/\s+Tram Stop$/i, "").trim();
 // Tram stops are listed per platform (9400ZZCRxxx1) but arrivals use the station id (940GZZCRxxx)
@@ -342,6 +350,9 @@ function stopPickerHTML(w, i, stops){
   return `<div class="field"><span>Your ${word}</span>
     <div class="row"><input id="filter-${i}" data-i="${i}" data-f="filter" placeholder="Type to search ${word}s" value="${esc(filters[i] || "")}" style="flex:1">
     <button type="button" class="btn" data-act="near" data-i="${i}">Nearest to me</button></div>
+    ${f ? `<div class="matches">${stops.filter(s => s.name.toLowerCase().includes(f) || s.letter.toLowerCase() === f).slice(0, 8)
+      .map(s => `<button type="button" class="match" data-act="pick" data-i="${i}" data-id="${esc(s.id)}">${esc(stopLabel(s))}</button>`).join("")
+      || `<p class="hint">No ${word}s match "${esc(filters[i])}".</p>`}</div>` : ""}
     <select class="stops" id="stop-${i}" data-i="${i}" data-f="stop">
       <option value="">Choose your ${word}… (${shown.length})</option>
       ${shown.map(s => `<option value="${esc(s.id)}" ${s.id === w.stop ? "selected" : ""}>${esc(stopLabel(s))}${w._near ? " · " + Math.round(dist(s, w._near)) + " m" : ""}</option>`).join("")}
@@ -413,7 +424,7 @@ const msgHTML = i => slotMsg[i] ? `<p class="msg ${slotMsg[i].err ? "err" : ""}"
 
 function slotHTML(w, i){
   return `<fieldset class="slot">
-    <div class="slot-head"><h2>Journey ${i + 1}</h2>${draft.length > 1 ? `<button type="button" class="btn ghost" data-act="remove" data-i="${i}">Remove</button>` : ""}</div>
+    <div class="slot-head"><input class="jname" id="name-${i}" data-i="${i}" data-f="name" value="${esc(w.name || "")}" placeholder="Journey ${i + 1}" maxlength="40" aria-label="Journey name (tap to rename)" autocomplete="off">${draft.length > 1 ? `<button type="button" class="btn ghost" data-act="remove" data-i="${i}">Remove</button>` : ""}</div>
     <div class="seg" role="group" aria-label="Type of transport">
       <button type="button" data-act="mode" data-i="${i}" data-m="bus" aria-pressed="${!isRail(w)}">Bus</button>
       <button type="button" data-act="mode" data-i="${i}" data-m="rail" aria-pressed="${isRail(w)}">Tube &amp; rail</button>
@@ -478,6 +489,11 @@ $("setup").addEventListener("click", e => {
   if (act === "remove"){ draft.splice(i, 1); filters = {}; slotMsg = {}; renderForm(); }
   if (act === "cancel"){ showLive(); }
   if (act === "find"){ findStops(i); }
+  if (act === "pick"){
+    filters[i] = "";
+    chooseStop(i, (stopsFor(draft[i]) || []).find(x => x.id === b.dataset.id));
+    renderForm();
+  }
   if (act === "mode"){
     const m = b.dataset.m, w = draft[i];
     if (w.mode === m) return;
@@ -513,6 +529,7 @@ $("setup").addEventListener("input", e => {
   const w = draft[i];
   if (f === "route"){ w.route = el.value.trim(); }
   if (f === "filter"){ filters[i] = el.value; renderForm(); }
+  if (f === "name") w.name = el.value;
   if (f === "from" || f === "to") w[f] = el.value;
   if (f === "walk") w.walk = Math.max(0, +el.value || 0);
 });
@@ -556,14 +573,14 @@ $("setup").addEventListener("submit", e => {
   if (!keep.length){ $("formErr").textContent = "Add at least one journey: pick a bus route or a line, then your stop."; return; }
   if (bad >= 0){
     const w = keep[bad];
-    $("formErr").textContent = `Journey ${draft.indexOf(w) + 1}: ` + (!w.route ? "choose a line." : !isRail(w) && !w.dir ? "choose a direction."
+    $("formErr").textContent = `${(w.name || "").trim() || "Journey " + (draft.indexOf(w) + 1)}: ` + (!w.route ? "choose a line." : !isRail(w) && !w.dir ? "choose a direction."
       : !w.stop ? `choose your ${isRail(w) ? "station" : "stop"}.` : !w.days.length ? "pick at least one day." : "set the times.");
     return;
   }
   watches = keep.map(w => {
-    const common = {stop:w.stop, stopName:w.stopName, from:w.from, to:w.to, days:[...w.days].sort(), walk:w.walk, alert:!!w.alert};
+    const common = {name:(w.name || "").trim(), stop:w.stop, stopName:w.stopName, from:w.from, to:w.to, days:[...w.days].sort(), walk:w.walk, alert:!!w.alert};
     if (isRail(w)) return {mode:"rail", route:w.route, lineName:w.lineName, platform:w.platform, letter:"", ...common};
-    const d = routeData[w.route.toLowerCase()]?.dirs.find(x => x.dir === w.dir);
+    const d = routeData[w.route.toLowerCase()]?.dirs?.find(x => x.dir === w.dir);
     return {mode:"bus", route:w.route.toUpperCase(), dir:w.dir, dest:w.dest || (d ? d.dest : ""), letter:w.letter, ...common};
   });
   store.set("bw.watches", watches);
@@ -833,8 +850,11 @@ function cardHTML(w, size, idx){
   const minBtn = `<button class="minbtn" data-min="${esc(mkey)}" aria-label="${mini ? "Expand" : "Minimise"}" aria-expanded="${!mini}">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">${mini ? '<path d="M6 9l6 6 6-6"/>' : '<path d="M6 15l6-6 6 6"/>'}</svg></button>`;
   if (mini) return miniCardHTML(w, all, idx, minBtn);
-  const title = rail ? `<b>${esc(w.stopName)}</b><span>${w.platform ? esc(platLabel(w.platform)) : "All platforms"}${w.alert ? " · 🔔 leave alert on" : ""}</span>`
-    : `<b>To ${esc(w.dest)}</b><span>${esc(w.stopName)}${w.letter ? " · Stop " + esc(w.letter) : ""}${w.alert ? " · 🔔 leave alert on" : ""}</span>`;
+  const [head, detail] = rail ? [esc(w.stopName), w.platform ? esc(platLabel(w.platform)) : "All platforms"]
+    : [`To ${esc(w.dest)}`, `${esc(w.stopName)}${w.letter ? " · Stop " + esc(w.letter) : ""}`];
+  const bell = w.alert ? " · 🔔 leave alert on" : "";
+  // A journey with a name shows it as the title, with the usual details underneath
+  const title = w.name ? `<b>${esc(w.name)}</b><span>${head} · ${detail}${bell}</span>` : `<b>${head}</b><span>${detail}${bell}</span>`;
   let html = `<article class="card" data-k="c${idx}">
     <div class="c-head">${badgeHTML(w)}<div class="c-title">${title}</div>${minBtn}</div>
     ${alertHTML(w)}`;
@@ -852,7 +872,7 @@ function cardHTML(w, size, idx){
     ${rail ? "" : strip(list)}`;
   if (size === 3){
     const rest = list.slice(1);
-    html += rest.length ? `<div class="then" data-k="then">Then ${rest.map(b => `<b>${minsTo(b.eta)} min</b>`).join(" · ")}</div>` : "";
+    html += rest.length ? `<div class="then" data-k="then">Then ${rest.map(b => `<b${minsTo(b.eta) > 3 ? ' class="far"' : ""}>${minsTo(b.eta)} min</b>`).join(" · ")}</div>` : "";
   } else {
     html += `<ul class="buses" data-k="list">${list.map((b, i) => `<li data-k="l${esc(b.vid)}">
       <div class="info"><div class="where">${rail ? railWhere(w, b, size === 1)
@@ -877,7 +897,7 @@ function miniCardHTML(w, all, idx, minBtn){
   const m = b1 ? minsTo(b1.eta) : null;
   return `<article class="card mini" data-k="c${idx}">
     <div class="c-head">${badgeHTML(w)}
-      <div class="c-title"><b>${esc(w.stopName)}</b><span>${esc(parts.join(" · "))}</span></div>
+      <div class="c-title"><b>${esc(w.name || w.stopName)}</b><span>${esc(parts.join(" · "))}</span></div>
       ${b1 ? `<div class="mini-time${m === 0 ? " due" : ""}">${m === 0 ? "Due" : m + "<small>min</small>"}</div>` : ""}
       ${minBtn}</div></article>`;
 }
@@ -931,7 +951,7 @@ function render(){
   const asleep = watches.map((w, i) => i).filter(i => !vis.includes(i));
   patch($("sleeping"), asleep.map(i => { const w = watches[i]; return `<div class="sleep" data-k="s${i}">
       ${badgeHTML(w)}
-      <div class="c-title"><b>${esc(w.stopName)}</b><span>${nextStartText(w)}</span></div>
+      <div class="c-title"><b>${esc(w.name || w.stopName)}</b><span>${w.name ? esc(w.stopName) + " · " : ""}${nextStartText(w)}</span></div>
       <button class="btn" data-show="${i}">Show now</button></div>`; }).join(""));
 
   const states = vis.map(i => live[liveKey(watches[i])]).filter(Boolean);
