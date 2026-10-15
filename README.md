@@ -15,6 +15,8 @@ route bar showing where each bus is; "slipping / on track" trends; bunching and 
 soonest bus across all routes shown first, plus the next incoming bus.
 If a bus is too tight to catch, it tells you when to leave for the next one you can make.
 TfL diversions and disruptions are flagged on each route, with ones that name your stop shown first.
+Widget only: a "Likely busy" / "Likely quieter" estimate for each bus. TfL doesn't publish how full buses are,
+so it's a best guess from the pattern of buses (a long gap before it, bunching, delays, disruption, rush hour).
 Set the same start and end time to watch a bus all day.
 Web app only: smooth live updates, and a "Keep screen on" option while you watch.
 

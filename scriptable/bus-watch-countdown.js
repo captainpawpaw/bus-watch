@@ -276,6 +276,13 @@ function record(w, buses) {
     const k = w.stop + "|" + b.vid, h = (hist[k] = hist[k] || []);
     if (!h.length || now - h[h.length - 1][0] > 15000) h.push([now, b.eta]);
   }
+  // Remember when the last bus left this stop: one we were tracking that's no longer due
+  const due = new Set(buses.map(b => b.vid)), pk = "passed|" + w.stop;
+  for (const k in hist) {
+    if (!k.startsWith(w.stop + "|") || due.has(k.slice(w.stop.length + 1))) continue;
+    const last = hist[k][hist[k].length - 1][1];
+    if (last <= now + 90000 && (!hist[pk] || last > hist[pk][0][0])) hist[pk] = [[last, last]];
+  }
 }
 function trend(w, b) {
   const h = hist[w.stop + "|" + b.vid]; if (!h || h.length < 2) return null;
@@ -310,6 +317,37 @@ function adviceText(w, list) {
   if (t !== null && t >= 2) return { text: `Next bus held up: ${Math.round(t)} min later than before`, color: C.warn };
   return null;
 }
+/* ---- How busy the bus might be ----
+   TfL doesn't publish how full buses are, so this is a best guess from the pattern of buses:
+   a bus after a long gap picks up everyone who's been waiting, the first of a bunched pair is
+   fuller and the one right behind it emptier, and delays, disruption and rush hour add to it. */
+const median = a => { const s = [...a].sort((x, y) => x - y), m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
+function passedAt(w) { const h = hist["passed|" + w.stop]; return h && h.length ? h[h.length - 1][0] : null; }
+function isPeak(d = new Date()) {
+  const day = d.getDay(), m = d.getHours() * 60 + d.getMinutes();
+  return day >= 1 && day <= 5 && ((m >= 420 && m < 570) || (m >= 900 && m < 1140));   // 07:00–09:30, 15:00–19:00
+}
+function crowd(w, list, i, disrupted) {
+  const b = list[i]; if (!b) return null;
+  const gaps = list.slice(1).map((x, k) => (x.eta - list[k].eta) / 60000);
+  const passed = passedAt(w), g0 = passed && passed < list[0].eta ? (list[0].eta - passed) / 60000 : null;
+  if (g0 !== null) gaps.unshift(g0);
+  const usual = gaps.length >= 2 ? median(gaps) : null;   // how often buses usually come right now
+  const before = i ? (b.eta - list[i - 1].eta) / 60000 : g0;
+  const after = list[i + 1] ? (list[i + 1].eta - b.eta) / 60000 : null;
+  if (i > 0 && before <= 3) return { busy: false, text: "Likely quieter", why: "close behind the bus in front" };
+  let score = 0; const why = [];
+  if (before !== null && usual && before >= Math.max(usual * 1.6, usual + 5)) { score += 2; why.push(`${Math.round(before)} min gap before it`); }
+  if (after !== null && after <= 3) { score += 1; why.push("another bus right behind"); }
+  const t = trend(w, b); if (t !== null && t >= 3) { score += 1; why.push("running late"); }
+  if (disrupted) { score += 1; why.push("route disrupted"); }
+  if (isPeak()) { score += 1; why.push("rush hour"); }
+  return score >= 2 ? { busy: true, text: "Likely busy", why: why.join(", ") } : null;
+}
+const crowdOf = (p, list, i) => {
+  const c = crowd(p.w, list || [], i, !!p.alert);
+  return c && { ...c, color: c.busy ? C.warn : C.info };
+};
 const firstEta = p => (p.buses && p.buses[0]) ? p.buses[0].eta : 9e15;
 const mins = b => Math.max(0, Math.floor((b.eta - Date.now()) / 60000));
 const minsStr = b => mins(b) === 0 ? "Due" : mins(b) + " min";
@@ -473,7 +511,8 @@ async function buildWidget(family, pinned, forceAll, minShow = 0) {
       txt(top, p.w.route, 16, fg, true); etaTimer(top, b, 16, fg);
       if (p.alert) txt(top, "⚠", 14, fg, true);
       leaveLine(w, p.w, b, p.buses, 12, fg);
-      txt(w, p.buses[1] ? `next ${nextTimes(p.buses, 2)}` : "next not predicted yet", 12, fg, false);
+      const cr = crowdOf(p, p.buses, 0);
+      txt(w, (cr ? cr.text + " · " : "") + (p.buses[1] ? `next ${nextTimes(p.buses, cr ? 1 : 2)}` : "next not predicted yet"), 12, fg, !!cr);
       return w;
     }
     const soonest = active.slice(0, 3);
@@ -527,7 +566,9 @@ async function buildWidget(family, pinned, forceAll, minShow = 0) {
       leaveLine(w, p.w, b, p.buses, 12);
       const tr = trendText(p.w, b); txt(w, tr.text, 11, tr.color, false);
     }
-    if (p.alert) txt(w, "⚠ " + (p.alert.mine ? "Your stop affected" : "Route disrupted"), 10, C.warn, true);
+    const cr = b && crowdOf(p, p.buses, 0);
+    if (p.alert) txt(w, "⚠ " + (p.alert.mine ? "Your stop affected" : "Route disrupted") + (cr ? " · " + cr.text.toLowerCase() : ""), 10, C.warn, true);
+    else if (cr) txt(w, cr.text, 10, cr.color, true);
     w.addSpacer();
     // The next incoming bus after this one, on any of your live routes
     const nx = upcoming[1];
@@ -560,6 +601,7 @@ async function buildWidget(family, pinned, forceAll, minShow = 0) {
       etaTimer(s, b, big, fg, C.accent);
       leaveLine(s, p.w, b, list, 11);
       const tr = trendText(p.w, b); txt(s, tr.text, 10, tr.color, false);
+      const cr = crowdOf(p, list, 0); if (cr) txt(s, cr.text, 10, cr.color, true);
       txt(s, list[1] ? "Next " + nextTimes(list, 2) : "Next: not predicted yet", 11, list[1] ? fg : muted, !!list[1]);
       return s;
     }
@@ -568,6 +610,7 @@ async function buildWidget(family, pinned, forceAll, minShow = 0) {
     const side = row.addStack(); side.layoutVertically();
     leaveLine(side, p.w, b, list, 12);
     const tr = trendText(p.w, b); txt(side, tr.text, 11, tr.color, false);
+    const cr = crowdOf(p, list, 0); if (cr) txt(side, mode === "s" ? cr.text : `${cr.text} · ${cr.why}`, 11, cr.color, true);
     if (mode !== "s") {
       const adv = adviceText(p.w, list.slice(0, 4));
       if (adv && mode === "xl") { s.addSpacer(4); txt(s, adv.text, 12, adv.color, true); }
@@ -582,6 +625,7 @@ async function buildWidget(family, pinned, forceAll, minShow = 0) {
         const r = s.addStack(); r.centerAlignContent(); r.spacing = 8;
         const m = r.addStack(); m.size = new Size(52, 0); txt(m, clock(x.eta), 13, fg, true);
         txt(r, `${x.stopsAway} stops away${x.nextStop ? " · " + x.nextStop : ""}`, 11, muted, false);
+        const cx = crowdOf(p, list, list.indexOf(x)); if (cx) txt(r, cx.busy ? "Busy?" : "Quieter", 10, cx.color, true);
         r.addSpacer();
         const t = trendText(p.w, x); txt(r, t.text, 10, t.color, false);
         s.addSpacer(3);
@@ -604,7 +648,8 @@ async function buildWidget(family, pinned, forceAll, minShow = 0) {
     else {
       const tr = trendText(p.w, b);
       const st = mid.addStack(); st.spacing = 4; st.centerAlignContent();
-      leaveLine(st, p.w, b, list, 11); txt(st, "·", 11, muted, false); txt(st, tr.text, 10, tr.color, false);
+      leaveLine(st, p.w, b, list, 11); const cr = crowdOf(p, list, 0);
+      txt(st, "·", 11, muted, false); txt(st, cr ? cr.text : tr.text, 10, cr ? cr.color : tr.color, cr ? true : false);
     }
     r.addSpacer();
     if (b) {
