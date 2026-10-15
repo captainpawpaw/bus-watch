@@ -25,6 +25,11 @@ your station and platform, and it shows the next trains with where they're headi
 Turn on "Alert me when it's time to leave" for a chime and notification when it's time to set off.
 Alerts work while the app is open (pair them with "Keep screen on"); phones pause web apps in the background.
 
+Each journey card has a minimise button (top right) that shrinks it to one line with the countdown and
+when to leave; the app remembers which ones you've minimised. Bus cards show the same "Likely busy" /
+"Likely quieter" estimate as the widget, and Tube and Elizabeth line stations show TfL's live station
+busyness (compared with that station's usual busiest time).
+
 Hosting with GitHub Pages: the root `index.html` forwards to `web/`, so the site address opens the app.
 
 Live data: TfL Open Data (api.tfl.gov.uk).

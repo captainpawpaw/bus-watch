@@ -78,7 +78,15 @@ body.wide .cards.n3{grid-template-columns:repeat(3,minmax(0,1fr))}
 .cards.n1 .card{background:transparent;border:0;padding:4px 0}
 .c-head{display:flex;align-items:center;gap:10px}
 .badge{flex:none;display:grid;place-items:center;min-width:48px;height:38px;padding:0 8px;border-radius:8px;background:var(--accent);color:#fff;font:700 24px var(--display)}
-.c-title{min-width:0}
+.c-title{min-width:0;flex:1}
+.minbtn{flex:none;align-self:flex-start;width:36px;height:36px;padding:0;border-radius:10px;border:1px solid var(--line);background:transparent;color:var(--muted);display:grid;place-items:center}
+.minbtn svg{width:18px;height:18px}
+.card.mini{padding:12px 14px}
+.cards.n1 .card.mini{padding:4px 0}
+.mini-time{flex:none;font:700 36px var(--display);line-height:1;white-space:nowrap}
+.mini-time small{font-size:.42em;font-weight:600;margin-left:3px;color:var(--muted)}
+.mini-time.due{color:var(--accent)}
+.card.mini .c-title span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .c-title b{display:block;font-size:16px}
 .c-title span{display:block;font-size:13px;color:var(--muted);overflow-wrap:anywhere}
 .big{font-family:var(--display);font-weight:700;line-height:.9;margin:12px 0 0}
@@ -198,6 +206,8 @@ let routeData = {};     // bus route -> {dirs:[{dir,dest,stops}]} | "rail:<line>
 let platformData = {};  // "<line>|<station>" -> {list:[{name,dests}]} | {loading}
 let railLines = null;   // [{id,name,mode}]
 let status = {}, statusAt = 0;   // line id -> [{desc, reason}]
+let crowding = {};      // station id -> {live, at, profile:{day, bands, peak}, none}
+let minimised = new Set(store.get("bw.min", []));   // journeys shown as a single line
 let draft = [], filters = {}, slotMsg = {};
 
 const isRail = w => w.mode === "rail";
@@ -596,7 +606,8 @@ async function poll(){
   const vis = visible().map(i => watches[i]);
   const urls = new Map(vis.map(w => [liveKey(w), liveURL(w)]));
   const lines = [...new Set(vis.map(w => w.route.toLowerCase()))];
-  await Promise.all([pollStatus(lines), ...[...urls].map(async ([k, url]) => {
+  const stations = [...new Set(vis.filter(isRail).map(w => w.stop))];
+  await Promise.all([pollStatus(lines), pollCrowding(stations), ...[...urls].map(async ([k, url]) => {
     try{
       const res = await fetch(url, {cache:"no-store"});
       if (!res.ok) throw new Error(res.status);
@@ -606,10 +617,19 @@ async function poll(){
   // Record each vehicle's predicted arrival so we can see trends
   const now = Date.now();
   for (const i of visible()){
-    for (const b of analyse(watches[i])){
+    const w = watches[i], all = analyse(w);
+    for (const b of all){
       if (!b.tracked) continue;
-      const k = watches[i].stop + "|" + b.vid, h = (hist[k] ||= []);
+      const k = w.stop + "|" + b.vid, h = (hist[k] ||= []);
       if (!h.length || now - h[h.length - 1][0] > 15000) h.push([now, b.eta]);
+    }
+    if (isRail(w)) continue;
+    // Remember when the last bus left this stop: one we were tracking that's no longer due
+    const due = new Set(all.map(b => b.vid)), pk = "passed|" + w.stop;
+    for (const k in hist){
+      if (!k.startsWith(w.stop + "|") || due.has(k.slice(w.stop.length + 1))) continue;
+      const last = hist[k][hist[k].length - 1][1];
+      if (last <= now + 90000 && (!hist[pk] || last > hist[pk][0][0])) hist[pk] = [[last, last]];
     }
   }
   for (const k in hist){ hist[k] = hist[k].filter(([t]) => now - t < 15 * 60000); if (!hist[k].length) delete hist[k]; }
@@ -694,6 +714,78 @@ function trendChip(w, b, short){
   if (t.drift <= -1) return `<span class="chip catch">▼ Catching up ${-d} min</span>`;
   return `<span class="chip ontrack">● On track</span>`;
 }
+/* ---- How busy the bus might be ----
+   TfL doesn't publish how full buses are, so this is a best guess from the pattern of buses:
+   a bus after a long gap picks up everyone who's been waiting, the first of a bunched pair is
+   fuller and the one right behind it emptier, and delays, disruption and rush hour add to it. */
+const median = a => { const s = [...a].sort((x, y) => x - y), m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
+function isPeak(d = new Date()){
+  const day = d.getDay(), m = d.getHours() * 60 + d.getMinutes();
+  return day >= 1 && day <= 5 && ((m >= 420 && m < 570) || (m >= 900 && m < 1140));   // 07:00–09:30, 15:00–19:00
+}
+function crowd(w, list, i){
+  const b = list[i]; if (!b || isRail(w)) return null;
+  const gaps = list.slice(1).map((x, k) => (x.eta - list[k].eta) / 60000);
+  const ph = hist["passed|" + w.stop], passed = ph ? ph[0][0] : null;
+  const g0 = passed && passed < list[0].eta ? (list[0].eta - passed) / 60000 : null;
+  if (g0 !== null) gaps.unshift(g0);
+  const usual = gaps.length >= 2 ? median(gaps) : null;   // how often buses usually come right now
+  const before = i ? (b.eta - list[i - 1].eta) / 60000 : g0;
+  const after = list[i + 1] ? (list[i + 1].eta - b.eta) / 60000 : null;
+  if (i > 0 && before <= 3) return {busy:false, text:"Likely quieter", why:"close behind the bus in front"};
+  let score = 0; const why = [];
+  if (before !== null && usual && before >= Math.max(usual * 1.6, usual + 5)){ score += 2; why.push(`${Math.round(before)} min gap before it`); }
+  if (after !== null && after <= 3){ score += 1; why.push("another bus right behind"); }
+  const t = trend(w, b); if (t && t.drift >= 3){ score += 1; why.push("running late"); }
+  if ((status[w.route.toLowerCase()] || []).length){ score += 1; why.push("route disrupted"); }
+  if (isPeak()){ score += 1; why.push("rush hour"); }
+  return score >= 2 ? {busy:true, text:"Likely busy", why:why.join(", ")} : null;
+}
+function crowdChip(w, list, i, short){
+  const c = crowd(w, list, i); if (!c) return "";
+  return `<span class="chip ${c.busy ? "slip" : "catch"}" title="${esc(c.why)}">${c.text}${short ? "" : " · " + esc(c.why)}</span>`;
+}
+
+/* ---- How busy the station is (Tube and Elizabeth line) ----
+   TfL's live figure is on a different scale for each station, so compare it with
+   that station's own busiest time today, and with what's usual at this time. */
+async function pollCrowding(ids){
+  const day = DAY[new Date().getDay()];
+  await Promise.all(ids.map(async id => {
+    const c = crowding[id] ||= {};
+    if (c.none) return;
+    try{
+      if (!c.profile || c.profile.day !== day){
+        const r = await fetch(`${API}/crowding/${encodeURIComponent(id)}/${day}`);
+        const j = r.ok ? await r.json() : {};
+        const bands = (j.timeBands || []).map(b => b.percentageOfBaseLine || 0);
+        c.profile = {day, bands, peak: Math.max(0, ...bands)};
+      }
+      if (Date.now() - (c.at || 0) > 120000){
+        const r = await fetch(`${API}/crowding/${encodeURIComponent(id)}/Live`, {cache:"no-store"});
+        if (!r.ok) return;
+        const j = await r.json();
+        c.at = Date.now();
+        c.live = j.dataAvailable ? j.percentageOfBaseline : null;
+        if (c.live === null && !c.profile.peak) c.none = true;   // no busyness data for this station
+      }
+    }catch{ /* busyness is a bonus */ }
+  }));
+}
+function stationBusy(w){
+  const c = crowding[w.stop];
+  if (!c || c.live == null || !c.profile || !c.profile.peak) return null;
+  const r = c.live / c.profile.peak, d = new Date();
+  const usual = c.profile.bands[Math.floor((d.getHours() * 60 + d.getMinutes()) / 15)];
+  const [label, cls] = r < 0.35 ? ["quiet", "ontrack"] : r < 0.6 ? ["moderately busy", "wait"] : r < 0.85 ? ["busy", "soon"] : ["very busy", "go"];
+  const vs = usual ? c.live / usual : null;
+  return {text: "Station " + label, cls, extra: vs >= 1.3 ? "busier than usual" : vs && vs <= 0.7 ? "quieter than usual" : ""};
+}
+function stationChip(w, short){
+  const s = stationBusy(w); if (!s) return "";
+  return `<span class="chip ${s.cls}">${s.text}${!short && s.extra ? " · " + s.extra : ""}</span>`;
+}
+
 function advice(w, list, short){
   const [b1, b2] = list; if (!b1) return "";
   const v = vehicle(w), gap = b2 ? (b2.eta - b1.eta) / 60000 : null, t1 = trend(w, b1);
@@ -737,10 +829,14 @@ function cardHTML(w, size, idx){
   const counts = {1:4, 2:3, 3:3};
   const all = analyse(w), list = all.slice(0, counts[size]);
   const b1 = list[0], rail = isRail(w);
+  const mkey = minKey(w), mini = minimised.has(mkey);
+  const minBtn = `<button class="minbtn" data-min="${esc(mkey)}" aria-label="${mini ? "Expand" : "Minimise"}" aria-expanded="${!mini}">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">${mini ? '<path d="M6 9l6 6 6-6"/>' : '<path d="M6 15l6-6 6 6"/>'}</svg></button>`;
+  if (mini) return miniCardHTML(w, all, idx, minBtn);
   const title = rail ? `<b>${esc(w.stopName)}</b><span>${w.platform ? esc(platLabel(w.platform)) : "All platforms"}${w.alert ? " · 🔔 leave alert on" : ""}</span>`
     : `<b>To ${esc(w.dest)}</b><span>${esc(w.stopName)}${w.letter ? " · Stop " + esc(w.letter) : ""}${w.alert ? " · 🔔 leave alert on" : ""}</span>`;
   let html = `<article class="card" data-k="c${idx}">
-    <div class="c-head">${badgeHTML(w)}<div class="c-title">${title}</div></div>
+    <div class="c-head">${badgeHTML(w)}<div class="c-title">${title}</div>${minBtn}</div>
     ${alertHTML(w)}`;
   if (!b1){
     return html + `<p class="empty">${L && L.ok ? `No ${vehicle(w)}s predicted in the next 30 minutes.` : L && L.err ? "Can't reach TfL right now." : "Loading live times…"}</p></article>`;
@@ -751,7 +847,7 @@ function cardHTML(w, size, idx){
     : `<span>Arrives ${clock(b1.eta)}</span><span>${plural(b1.stopsAway, "stop")} away</span>${size < 3 && b1.nextStop ? `<span>Next stop: ${esc(b1.nextStop)}</span>` : ""}`;
   html += `<div class="big${m === 0 ? " due" : ""}">${m === 0 ? "Due" : m + "<small>min</small>"}</div>
     <div class="sub">${sub}</div>
-    <div class="chips">${leaveChips(w, all)}${trendChip(w, b1, size === 3)}</div>
+    <div class="chips">${leaveChips(w, all)}${trendChip(w, b1, size === 3)}${rail ? stationChip(w, size === 3) : crowdChip(w, all, 0, size === 3)}</div>
     ${advice(w, list, size === 3)}
     ${rail ? "" : strip(list)}`;
   if (size === 3){
@@ -760,11 +856,38 @@ function cardHTML(w, size, idx){
   } else {
     html += `<ul class="buses" data-k="list">${list.map((b, i) => `<li data-k="l${esc(b.vid)}">
       <div class="info"><div class="where">${rail ? railWhere(w, b, size === 1)
-        : `${plural(b.stopsAway, "stop")} away${size === 1 && b.nextStop ? " · next stop " + esc(b.nextStop) : ""}`}${i ? ` · ${Math.round((b.eta - list[i - 1].eta) / 60000)} min after the one before` : ""}</div>${trendChip(w, b, size > 1)}</div>
+        : `${plural(b.stopsAway, "stop")} away${size === 1 && b.nextStop ? " · next stop " + esc(b.nextStop) : ""}`}${i ? ` · ${Math.round((b.eta - list[i - 1].eta) / 60000)} min after the one before` : ""}</div><div class="chips">${trendChip(w, b, size > 1)}${crowdChip(w, all, i, true)}</div></div>
       <div class="mins">${minsTo(b.eta) === 0 ? "Due" : minsTo(b.eta) + "m"}<span>${clock(b.eta)}</span></div></li>`).join("")}</ul>`;
   }
   return html + `</article>`;
 }
+
+// A minimised journey: one line with the countdown and what to do
+const minKey = w => [w.mode || "bus", w.route, w.stop, w.platform || ""].join("|");
+function miniCardHTML(w, all, idx, minBtn){
+  const b1 = all[0], parts = [];
+  if ((status[w.route.toLowerCase()] || []).length) parts.push("⚠");
+  if (b1){
+    const s = spareOf(w, b1), when = x => x < 120 ? "leave now" : `leave in ${Math.floor(x / 60)} min`;
+    const nx = s < 0 && all.find(x => x.eta > b1.eta && spareOf(w, x) >= 0);
+    parts.push(s >= 0 ? when(s)[0].toUpperCase() + when(s).slice(1) : nx ? `Too tight · next: ${when(spareOf(w, nx))}` : "Too tight");
+    const c = isRail(w) ? stationBusy(w) : crowd(w, all, 0);
+    if (c) parts.push(c.text.toLowerCase());
+  } else parts.push(live[liveKey(w)] && live[liveKey(w)].ok ? `No ${vehicle(w)}s due` : "Loading…");
+  const m = b1 ? minsTo(b1.eta) : null;
+  return `<article class="card mini" data-k="c${idx}">
+    <div class="c-head">${badgeHTML(w)}
+      <div class="c-title"><b>${esc(w.stopName)}</b><span>${esc(parts.join(" · "))}</span></div>
+      ${b1 ? `<div class="mini-time${m === 0 ? " due" : ""}">${m === 0 ? "Due" : m + "<small>min</small>"}</div>` : ""}
+      ${minBtn}</div></article>`;
+}
+$("cards").addEventListener("click", e => {
+  const b = e.target.closest("[data-min]"); if (!b) return;
+  const k = b.dataset.min;
+  if (minimised.has(k)) minimised.delete(k); else minimised.add(k);
+  store.set("bw.min", [...minimised]);
+  render();
+});
 
 /* Update the page in place instead of rebuilding it, so bus markers glide,
    open disruption notes stay open, and nothing flickers. Children with
