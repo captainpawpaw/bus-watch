@@ -344,11 +344,11 @@ function crowd(w, list, i, disrupted) {
   if (isPeak()) { score += 1; why.push("rush hour"); }
   return score >= 2 ? { busy: true, text: "Likely busy", why: why.join(", ") } : null;
 }
-const crowdOf = (p, list, i) => {
-  const c = crowd(p.w, list || [], i, !!p.alert);
+const crowdOf = (p, i) => {
+  const c = crowd(p.w, p.buses || [], (p.fi || 0) + i, !!p.alert);
   return c && { ...c, color: c.busy ? C.warn : C.info };
 };
-const firstEta = p => (p.buses && p.buses[0]) ? p.buses[0].eta : 9e15;
+const firstEta = p => (p.view && p.view[0]) ? p.view[0].eta : 9e15;
 const mins = b => Math.max(0, Math.floor((b.eta - Date.now()) / 60000));
 const minsStr = b => mins(b) === 0 ? "Due" : mins(b) + " min";
 // Later buses as clock times, which don't go stale like "in 6 min" does between refreshes
@@ -439,6 +439,17 @@ function leaveLine(stack, w, b, list, size, tint) {
   return r;
 }
 
+// "Next 12:40 · 10:25" – a live countdown for the bus after, so it's already
+// running when the first one has gone and its timer starts counting up
+function nextLine(stack, list, size, color, mutedColor) {
+  if (!list[1]) return txt(stack, "Next: not predicted yet", size, mutedColor, false);
+  const r = stack.addStack(); r.centerAlignContent(); r.spacing = 4;
+  txt(r, "Next", size, color, false);
+  etaTimer(r, list[1], size, color);
+  txt(r, "· " + clock(list[1].eta) + (list[2] ? ", " + clock(list[2].eta) : ""), size, mutedColor, false);
+  return r;
+}
+
 function badge(stack, route, size) {
   const b = stack.addStack();
   b.backgroundColor = C.accent; b.cornerRadius = 5; b.setPadding(1, 5, 1, 5);
@@ -478,11 +489,17 @@ async function buildWidget(family, pinned, forceAll, minShow = 0) {
     p.buses = data[p.w.route] ? analyse(p.w, data[p.w.route]) : null;
     p.alert = disruptionFor(p.w, status);
     if (p.buses) record(p.w, p.buses);
+    // Count down to the first bus you can still catch; ones that are too tight are skipped,
+    // so the widget has usually moved on before a timer reaches zero
+    const all = p.buses || [], fi = all.findIndex(b => spareSecs(p.w, b) >= 0);
+    p.fi = fi < 0 ? 0 : fi;
+    p.view = all.slice(p.fi);
+    p.skipped = all.slice(0, p.fi);
   }
   // Put the route with the soonest bus first, everywhere
   active.sort((a, b) => firstEta(a) - firstEta(b));
   // Every upcoming bus across all live routes, soonest first
-  const upcoming = active.flatMap(p => (p.buses || []).map(b => ({ p, b }))).sort((x, y) => x.b.eta - y.b.eta);
+  const upcoming = active.flatMap(p => p.view.map(b => ({ p, b }))).sort((x, y) => x.b.eta - y.b.eta);
   const now = Date.now();
   for (const k in hist) { hist[k] = hist[k].filter(([t]) => now - t < 20 * 60000); if (!hist[k].length) delete hist[k]; }
   writeJSON(HIST, hist);
@@ -495,18 +512,19 @@ async function buildWidget(family, pinned, forceAll, minShow = 0) {
   }
 
   const n = active.length;
+  const tooTight = p => p.skipped.length ? `${clock(p.skipped[p.skipped.length - 1].eta)} too tight` : "";
   const fg = lock ? Color.white() : C.fg, muted = lock ? Color.white() : C.muted;
   w.url = REFRESH_URL;   // tapping any part without its own link refreshes
 
   /* ---- Lock Screen ---- */
   if (family === "accessoryInline") {
-    txt(w, n ? active.map(p => `${p.w.route} ${p.buses && p.buses[0] ? (mins(p.buses[0]) ? "at " + clock(p.buses[0].eta) : "Due") : "–"}`).join(" · ")
+    txt(w, n ? active.map(p => `${p.w.route} ${p.view[0] ? (mins(p.view[0]) ? "at " + clock(p.view[0].eta) : "Due") : "–"}`).join(" · ")
       : `${sleeping[0].w.route} ${nextStartText(sleeping[0].w)}`, 12, fg, false);
     return w;
   }
   if (family === "accessoryCircular") {
     const p = active[0] || sleeping[0];
-    const b = p.buses && p.buses[0];
+    const b = p.view && p.view[0];
     w.addSpacer(); txt(w, p.w.route, 11, fg, true).centerAlignText();
     if (b) etaTimer(w, b, 14, fg).centerAlignText(); else txt(w, "–", 16, fg, true).centerAlignText();
     w.addSpacer();
@@ -515,20 +533,24 @@ async function buildWidget(family, pinned, forceAll, minShow = 0) {
   if (family === "accessoryRectangular") {
     if (!n) { txt(w, `${sleeping[0].w.route} bus`, 14, fg, true); txt(w, nextStartText(sleeping[0].w), 12, fg, false); return w; }
     if (n === 1) {
-      const p = active[0], b = p.buses && p.buses[0];
+      const p = active[0], b = p.view[0];
       if (!b) { txt(w, `${p.w.route} · none due`, 14, fg, true); return w; }
       const top = w.addStack(); top.centerAlignContent(); top.spacing = 6;
       txt(top, p.w.route, 16, fg, true); etaTimer(top, b, 16, fg);
       if (b.eta - Date.now() >= 60000) txt(top, "due " + clock(b.eta), 12, fg, false);
       if (p.alert) txt(top, "⚠", 14, fg, true);
-      leaveLine(w, p.w, b, p.buses, 12, fg);
-      const cr = crowdOf(p, p.buses, 0);
-      txt(w, (cr ? cr.text + " · " : "") + (p.buses[1] ? `next ${nextTimes(p.buses, cr ? 1 : 2)}` : "next not predicted yet"), 12, fg, !!cr);
+      leaveLine(w, p.w, b, p.view, 12, fg);
+      const cr = crowdOf(p, 0);
+      if (p.view[1]) {
+        const r = w.addStack(); r.centerAlignContent(); r.spacing = 4;
+        if (cr) txt(r, cr.text + " ·", 12, fg, true);
+        txt(r, "next", 12, fg, false); etaTimer(r, p.view[1], 12, fg); txt(r, "· " + clock(p.view[1].eta), 12, fg, false);
+      } else txt(w, (cr ? cr.text + " · " : "") + "next not predicted yet", 12, fg, !!cr);
       return w;
     }
     const soonest = active.slice(0, 3);
     for (const p of soonest) {
-      const b = p.buses || [];
+      const b = p.view;
       const r = w.addStack(); r.centerAlignContent(); r.spacing = 5;
       const size = n === 2 ? 14 : 12;
       txt(r, p.w.route, size, fg, true);
@@ -574,10 +596,10 @@ async function buildWidget(family, pinned, forceAll, minShow = 0) {
     if (!b) { txt(w, p.buses ? "None due" : "No signal", 18, fg, true); }
     else {
       etaBlock(w, b, 32, fg, C.accent);
-      leaveLine(w, p.w, b, p.buses, 12);
+      leaveLine(w, p.w, b, p.view, 12);
       const tr = trendText(p.w, b); txt(w, tr.text, 11, tr.color, false);
     }
-    const cr = b && crowdOf(p, p.buses, 0);
+    const cr = b && crowdOf(p, 0);
     if (p.alert) txt(w, "⚠ " + (p.alert.mine ? "Your stop affected" : "Route disrupted") + (cr ? " · " + cr.text.toLowerCase() : ""), 10, C.warn, true);
     else if (cr) txt(w, cr.text, 10, cr.color, true);
     w.addSpacer();
@@ -585,7 +607,7 @@ async function buildWidget(family, pinned, forceAll, minShow = 0) {
     const nx = upcoming[1];
     if (nx) {
       const r = w.addStack(); r.centerAlignContent(); r.spacing = 5;
-      txt(r, "Next", 11, muted, false); badge(r, nx.p.w.route, 10); txt(r, clock(nx.b.eta), 12, fg, true);
+      txt(r, "Next", 11, muted, false); badge(r, nx.p.w.route, 10); etaTimer(r, nx.b, 12, fg); txt(r, clock(nx.b.eta), 10, muted, false);
     } else if (b) txt(w, "Next: not predicted yet", 10, muted, false);
     const f = w.addStack(); f.url = REFRESH_URL;
     txt(f, `${clock(now)}  `, 9, muted, false); txt(f, "↻ Refresh", 10, C.accent, true);
@@ -599,12 +621,12 @@ async function buildWidget(family, pinned, forceAll, minShow = 0) {
     const s = parent.addStack(); s.layoutVertically(); s.url = "https://tfl.gov.uk/bus/stop/" + p.w.stop;
     const h = s.addStack(); h.centerAlignContent(); h.spacing = 6;
     badge(h, p.w.route, mode === "xl" ? 18 : 14);
-    txt(h, `${p.w.stopName}${p.w.letter ? " · " + p.w.letter : ""}${p.forced ? " · outside your hours" : ""}`, 11, muted, false);
+    txt(h, `${p.w.stopName}${p.w.letter ? " · " + p.w.letter : ""}${p.forced ? " · outside your hours" : ""}${tooTight(p) ? " · " + tooTight(p) : ""}`, 11, muted, false);
     if (p.alert) {
       if (mode === "col") txt(s, "⚠ " + (p.alert.mine ? "Your stop affected" : "Route disrupted"), 10, C.warn, true);
       else txt(s, "⚠ " + p.alert.text, mode === "xl" ? 11 : 10, C.warn, mode === "xl", mode === "xl" ? 3 : mode === "l" ? 2 : 1);
     }
-    const list = p.buses || [];
+    const list = p.view;
     const b = list[0];
     if (!b) { s.addSpacer(4); txt(s, p.buses ? "No buses in the next 30 min" : "Can't reach TfL", 13, muted, false); return s; }
     const big = { xl: 56, l: 36, m: 30, s: 24, col: n === 2 ? 30 : 24 }[mode];
@@ -612,8 +634,8 @@ async function buildWidget(family, pinned, forceAll, minShow = 0) {
       etaBlock(s, b, big, fg, C.accent);
       leaveLine(s, p.w, b, list, 11);
       const tr = trendText(p.w, b); txt(s, tr.text, 10, tr.color, false);
-      const cr = crowdOf(p, list, 0); if (cr) txt(s, cr.text, 10, cr.color, true);
-      txt(s, list[1] ? "Next " + nextTimes(list, 2) : "Next: not predicted yet", 11, list[1] ? fg : muted, !!list[1]);
+      const cr = crowdOf(p, 0); if (cr) txt(s, cr.text, 10, cr.color, true);
+      nextLine(s, list, 11, fg, muted);
       return s;
     }
     const row = s.addStack(); row.bottomAlignContent(); row.spacing = 8;
@@ -621,14 +643,14 @@ async function buildWidget(family, pinned, forceAll, minShow = 0) {
     const side = row.addStack(); side.layoutVertically();
     leaveLine(side, p.w, b, list, 12);
     const tr = trendText(p.w, b); txt(side, tr.text, 11, tr.color, false);
-    const cr = crowdOf(p, list, 0); if (cr) txt(side, mode === "s" ? cr.text : `${cr.text} · ${cr.why}`, 11, cr.color, true);
+    const cr = crowdOf(p, 0); if (cr) txt(side, mode === "s" ? cr.text : `${cr.text} · ${cr.why}`, 11, cr.color, true);
     if (mode !== "s") {
       const adv = adviceText(p.w, list.slice(0, 4));
       if (adv && mode === "xl") { s.addSpacer(4); txt(s, adv.text, 12, adv.color, true); }
     }
     s.addSpacer(mode === "s" ? 2 : 4);
     const stripH = mode === "s" ? 20 : 36;
-    const img = s.addImage(stripImage(list.slice(0, 4), W, stripH));
+    const img = s.addImage(stripImage((p.buses || []).slice(0, 4), W, stripH));
     img.imageSize = new Size(W, stripH);
     if (mode === "xl") {
       s.addSpacer(4);
@@ -636,13 +658,13 @@ async function buildWidget(family, pinned, forceAll, minShow = 0) {
         const r = s.addStack(); r.centerAlignContent(); r.spacing = 8;
         const m = r.addStack(); m.size = new Size(52, 0); txt(m, clock(x.eta), 13, fg, true);
         txt(r, `${x.stopsAway} stops away${x.nextStop ? " · " + x.nextStop : ""}`, 11, muted, false);
-        const cx = crowdOf(p, list, list.indexOf(x)); if (cx) txt(r, cx.busy ? "Busy?" : "Quieter", 10, cx.color, true);
+        const cx = crowdOf(p, list.indexOf(x)); if (cx) txt(r, cx.busy ? "Busy?" : "Quieter", 10, cx.color, true);
         r.addSpacer();
         const t = trendText(p.w, x); txt(r, t.text, 10, t.color, false);
         s.addSpacer(3);
       });
     } else {
-      txt(s, list[1] ? "Next " + nextTimes(list, 2).replace(", ", " · ") : "Next: not predicted yet", 11, list[1] ? fg : muted, !!list[1]);
+      nextLine(s, list, 11, fg, muted);
     }
     return s;
   };
@@ -654,12 +676,12 @@ async function buildWidget(family, pinned, forceAll, minShow = 0) {
     const bd = r.addStack(); bd.size = new Size(46, 0); badge(bd, p.w.route, 13);
     const mid = r.addStack(); mid.layoutVertically();
     txt(mid, `${p.alert ? "⚠ " : ""}${p.w.stopName}${p.w.letter ? " · " + p.w.letter : ""}${p.forced ? " · outside hours" : ""}`, 10, p.alert ? C.warn : muted, false);
-    const list = p.buses || [], b = list[0];
+    const list = p.view || [], b = list[0];
     if (!b) txt(mid, p.buses ? "None due in 30 min" : "Can't reach TfL", 11, muted, false);
     else {
       const tr = trendText(p.w, b);
       const st = mid.addStack(); st.spacing = 4; st.centerAlignContent();
-      leaveLine(st, p.w, b, list, 11); const cr = crowdOf(p, list, 0);
+      leaveLine(st, p.w, b, list, 11); const cr = crowdOf(p, 0);
       txt(st, "·", 11, muted, false); txt(st, cr ? cr.text : tr.text, 10, cr ? cr.color : tr.color, cr ? true : false);
     }
     r.addSpacer();
