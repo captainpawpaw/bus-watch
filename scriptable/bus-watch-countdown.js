@@ -402,7 +402,9 @@ function txt(stack, s, size, color, bold, lines = 1) {
   t.textColor = color; t.lineLimit = lines; t.minimumScaleFactor = lines > 1 ? 1 : 0.6;
   return t;
 }
-// A countdown iOS keeps ticking on its own between widget refreshes
+// A countdown iOS keeps ticking on its own between widget refreshes.
+// iOS can't stop it at zero: it counts back up until the widget next refreshes,
+// so every countdown also shows the clock time it's counting to.
 function timer(stack, ms, size, color) {
   const d = stack.addDate(new Date(ms));
   d.applyTimerStyle();
@@ -414,18 +416,26 @@ function timer(stack, ms, size, color) {
 function etaTimer(stack, b, size, color, dueColor) {
   return b.eta - Date.now() < 60000 ? txt(stack, "Due", size, dueColor || color, true) : timer(stack, b.eta, size, color);
 }
-// "Leave in 3:12" with a live countdown to when you need to set off; other advice as plain text
+// The big countdown with "due 10:12" underneath
+function etaBlock(stack, b, size, color, dueColor) {
+  const s = stack.addStack(); s.layoutVertically();
+  etaTimer(s, b, size, color, dueColor);
+  if (b.eta - Date.now() >= 60000) txt(s, "due " + clock(b.eta), Math.max(10, Math.round(size * 0.32)), C.muted, true);
+  return s;
+}
+// "Leave by 10:09 · 3:12" with a live countdown to when you need to set off; other advice as plain text
 function leaveLine(stack, w, b, list, size, tint) {
   const spare = spareSecs(w, b);
-  let target = spare >= 120 ? b : null, lead = "Leave in", color = tint || C.ok;
+  let target = spare >= 120 ? b : null, lead = "Leave by", color = tint || C.ok;
   if (spare < 0) {
     const nx = (list || []).find(x => x.eta > b.eta && spareSecs(w, x) >= 120);
-    if (nx) { target = nx; lead = "Too tight · next: leave in"; color = tint || C.accent; }
+    if (nx) { target = nx; lead = "Next: leave by"; color = tint || C.accent; }
   }
   if (!target) { const lv = leaveText(w, b, list); return txt(stack, lv.text, size, tint || lv.color, true); }
   const r = stack.addStack(); r.centerAlignContent(); r.spacing = 3;
-  txt(r, lead, size, color, true);
-  timer(r, target.eta - w.walk * 60000, size, color);
+  const leaveAt = target.eta - w.walk * 60000;
+  txt(r, `${lead} ${clock(leaveAt)} ·`, size, color, true);
+  timer(r, leaveAt, size, color);
   return r;
 }
 
@@ -509,6 +519,7 @@ async function buildWidget(family, pinned, forceAll, minShow = 0) {
       if (!b) { txt(w, `${p.w.route} · none due`, 14, fg, true); return w; }
       const top = w.addStack(); top.centerAlignContent(); top.spacing = 6;
       txt(top, p.w.route, 16, fg, true); etaTimer(top, b, 16, fg);
+      if (b.eta - Date.now() >= 60000) txt(top, "due " + clock(b.eta), 12, fg, false);
       if (p.alert) txt(top, "⚠", 14, fg, true);
       leaveLine(w, p.w, b, p.buses, 12, fg);
       const cr = crowdOf(p, p.buses, 0);
@@ -522,7 +533,7 @@ async function buildWidget(family, pinned, forceAll, minShow = 0) {
       const size = n === 2 ? 14 : 12;
       txt(r, p.w.route, size, fg, true);
       if (b[0]) etaTimer(r, b[0], size, fg); else txt(r, "–", size, fg, true);
-      if (b[1]) txt(r, "· " + clock(b[1].eta), size - 1, fg, false);
+      if (b[0] && b[0].eta - Date.now() >= 60000) txt(r, "· due " + clock(b[0].eta), size - 1, fg, false);
     }
     return w;
   }
@@ -562,7 +573,7 @@ async function buildWidget(family, pinned, forceAll, minShow = 0) {
     w.addSpacer(4);
     if (!b) { txt(w, p.buses ? "None due" : "No signal", 18, fg, true); }
     else {
-      etaTimer(w, b, 32, fg, C.accent);
+      etaBlock(w, b, 32, fg, C.accent);
       leaveLine(w, p.w, b, p.buses, 12);
       const tr = trendText(p.w, b); txt(w, tr.text, 11, tr.color, false);
     }
@@ -598,7 +609,7 @@ async function buildWidget(family, pinned, forceAll, minShow = 0) {
     if (!b) { s.addSpacer(4); txt(s, p.buses ? "No buses in the next 30 min" : "Can't reach TfL", 13, muted, false); return s; }
     const big = { xl: 56, l: 36, m: 30, s: 24, col: n === 2 ? 30 : 24 }[mode];
     if (mode === "col") {
-      etaTimer(s, b, big, fg, C.accent);
+      etaBlock(s, b, big, fg, C.accent);
       leaveLine(s, p.w, b, list, 11);
       const tr = trendText(p.w, b); txt(s, tr.text, 10, tr.color, false);
       const cr = crowdOf(p, list, 0); if (cr) txt(s, cr.text, 10, cr.color, true);
@@ -606,7 +617,7 @@ async function buildWidget(family, pinned, forceAll, minShow = 0) {
       return s;
     }
     const row = s.addStack(); row.bottomAlignContent(); row.spacing = 8;
-    etaTimer(row, b, big, fg, C.accent);
+    etaBlock(row, b, big, fg, C.accent);
     const side = row.addStack(); side.layoutVertically();
     leaveLine(side, p.w, b, list, 12);
     const tr = trendText(p.w, b); txt(side, tr.text, 11, tr.color, false);
@@ -655,7 +666,7 @@ async function buildWidget(family, pinned, forceAll, minShow = 0) {
     if (b) {
       const right = r.addStack(); right.layoutVertically();
       etaTimer(right, b, 18, fg, C.accent).rightAlignText();
-      txt(right, list[1] ? "next " + clock(list[1].eta) : "next –", 10, muted, false).rightAlignText();
+      txt(right, "due " + clock(b.eta) + (list[1] ? " · " + clock(list[1].eta) : ""), 10, muted, false).rightAlignText();
     }
   };
 
