@@ -7,6 +7,8 @@ Live TfL bus arrival times for up to 6 routes, shown only during the hours you c
 - `scriptable/bus-watch-countdown.js` – the same widget with live countdowns (e.g. 4:32) that keep ticking
   between widget refreshes, so the Lock Screen stays accurate. Later buses show as clock times.
   Paste into a new Scriptable script (e.g. "Bus Watch Countdown"); it uses the same saved buses.
+- `kindle/` – a wall dashboard for an old e-ink Kindle: time, weather, buses, drive time with traffic, and
+  gas and electricity use from your smart meter. A free Vercel service draws it; see `kindle/README.md`.
 - `web/` – the same idea as a web app. Host the folder (e.g. GitHub Pages) and add it to your Home Screen;
   it installs as an app and opens offline (`manifest.webmanifest`, `sw.js`, icons).
 
