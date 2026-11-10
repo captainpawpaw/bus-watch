@@ -1,0 +1,21 @@
+{
+  "regions": [
+    "lhr1"
+  ],
+  "functions": {
+    "api/dashboard.js": {
+      "includeFiles": "{fonts/*.ttf,node_modules/@resvg/resvg-wasm/index_bg.wasm}",
+      "maxDuration": 20
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/dashboard.png",
+      "destination": "/api/dashboard"
+    },
+    {
+      "source": "/dashboard.svg",
+      "destination": "/api/dashboard?format=svg"
+    }
+  ]
+}

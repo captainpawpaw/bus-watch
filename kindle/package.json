@@ -1,0 +1,13 @@
+{
+  "name": "kindle-dashboard",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "preview": "node tools/preview.js",
+    "demo": "node tools/preview.js --demo"
+  },
+  "dependencies": {
+    "@resvg/resvg-wasm": "2.6.2"
+  }
+}
