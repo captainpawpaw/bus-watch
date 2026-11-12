@@ -48,10 +48,20 @@ export async function getBuses(env, now) {
     // The first bus you can still walk to in time.
     const catchable = walk ? wanted.find(a => a.mins >= walk) : null;
 
-    const first = arrivals[0] || {};
+    let name = arrivals[0]?.stationName;
+    let letter = arrivals[0]?.platformName;
+    if (!name) {
+      // Nothing due (e.g. overnight), so look the stop's name up instead.
+      try {
+        const info = await getJson(`https://api.tfl.gov.uk/StopPoint/${encodeURIComponent(stop.id)}${key}`);
+        const me = (info.children || []).find(c => c.naptanId === stop.id) || info;
+        name = info.commonName;
+        letter = me.stopLetter || (me.indicator || "").replace(/^Stop\s+/i, "");
+      } catch { /* fall back to the ID */ }
+    }
     return {
-      name: first.stationName || stop.id,
-      letter: first.platformName && first.platformName !== "null" ? first.platformName : "",
+      name: name || stop.id,
+      letter: letter && letter !== "null" ? letter : "",
       routes,
       leave: catchable ? { route: catchable.route, inMins: catchable.mins - walk } : null,
     };
