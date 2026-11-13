@@ -118,13 +118,20 @@ export async function getDrive(env, now = new Date()) {
   return {
     label: journey.label,
     minutes: Math.round(s.travelTimeInSeconds / 60),
-    usualMinutes: Math.round((s.noTrafficTravelTimeInSeconds ?? s.travelTimeInSeconds) / 60),
-    delayMinutes: Math.round((s.trafficDelayInSeconds || 0) / 60),
+    // "Usually" is TomTom's typical time for this time of day (from past traffic),
+    // so the difference is how much worse (or better) than normal it is right now.
+    // trafficDelayInSeconds only counts incidents, and the no-traffic time is
+    // empty roads, so neither matches what people mean by "usually".
+    usualMinutes: Math.round(usualSeconds(s) / 60),
+    delayMinutes: Math.round((s.travelTimeInSeconds - usualSeconds(s)) / 60),
     miles: s.lengthInMeters / 1609.344,
     arrival: new Date(s.arrivalTime),
     incidents,
   };
 }
+
+const usualSeconds = s =>
+  s.historicTrafficTravelTimeInSeconds ?? s.noTrafficTravelTimeInSeconds ?? s.travelTimeInSeconds;
 
 // Cells about 150 m across, used to tell whether an incident touches the route.
 const CELL = 0.0014;

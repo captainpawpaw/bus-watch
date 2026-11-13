@@ -176,7 +176,8 @@ function drive(result, zone, top) {
   const x = M + textWidth(`${d.minutes} min`, 42, true) + 18;
   // The ETA if you leave now, then how traffic compares with usual.
   out += text(x, y - 18, `Arrive ${clock(d.arrival, zone)}`, { size: 24, bold: true });
-  const delay = d.delayMinutes > 0 ? `+${d.delayMinutes} min traffic` : "No traffic delay";
+  const delay = d.delayMinutes > 0 ? `+${d.delayMinutes} min traffic`
+    : d.delayMinutes < 0 ? `${-d.delayMinutes} min quicker` : "Normal traffic";
   out += text(x, y + 2, `${delay} · usually ${d.usualMinutes} min`,
     { size: 16, fill: d.delayMinutes >= 5 ? "#000" : GREY, bold: d.delayMinutes >= 5, max: RIGHT - x });
 
