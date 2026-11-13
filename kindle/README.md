@@ -97,7 +97,9 @@ by USB). It shows each update and any error.
 - **Preview with made-up data:** `npm install`, then `npm run demo`. This writes `preview.png`.
 - **Preview with your real data:** put your settings in a `.env` file in this folder
   (`NAME=value`, one per line; it's ignored by git), then `npm run preview`.
-- **See it in a browser:** `https://YOUR-PROJECT.vercel.app/dashboard.svg?key=YOUR_DASH_TOKEN`
+- **Watch it live on a phone or computer:** `https://YOUR-PROJECT.vercel.app/view?key=YOUR_DASH_TOKEN`
+  refreshes itself just after every minute.
+- **Just the picture:** `https://YOUR-PROJECT.vercel.app/dashboard.svg?key=YOUR_DASH_TOKEN`
 - The layout is in `src/render.js`; each data source has its own file in `src/`.
 
 Data: TfL Open Data, Open-Meteo, TomTom and Bright (Glowmarkt). Font: Inter (SIL Open Font Licence, `fonts/OFL.txt`).

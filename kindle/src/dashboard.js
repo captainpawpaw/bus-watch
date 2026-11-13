@@ -43,12 +43,48 @@ export async function handle(request, env, { Resvg, fonts }) {
   if (url.searchParams.get("key") !== env.DASH_TOKEN) {
     return new Response("Add ?key=<your DASH_TOKEN> to the address.", { status: 401 });
   }
+  if (url.pathname.endsWith("/view") || url.searchParams.get("format") === "html") {
+    return new Response(viewerPage(url.searchParams.get("key")), {
+      headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
+    });
+  }
   const svg = await buildSvg(env);
   if (url.pathname.endsWith(".svg") || url.searchParams.get("format") === "svg") {
     return new Response(svg, { headers: { "content-type": "image/svg+xml", "cache-control": "no-store" } });
   }
   const png = await svgToPng(svg, Resvg, fonts);
   return new Response(png, { headers: { "content-type": "image/png", "cache-control": "no-store" } });
+}
+
+// A page for phones and computers that shows the dashboard and refreshes it
+// just after each minute, swapping the picture only once the new one has loaded.
+function viewerPage(key) {
+  const src = `/dashboard.svg?key=${encodeURIComponent(key)}`;
+  return `<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dashboard</title>
+<noscript><meta http-equiv="refresh" content="60"></noscript>
+<style>
+  html, body { margin: 0; height: 100%; background: #111; }
+  body { display: flex; align-items: center; justify-content: center; }
+  img { max-width: 100vw; max-height: 100vh; background: #fff; }
+</style>
+</head><body>
+<img id="dash" src="${src}&t=${Date.now()}" alt="Dashboard">
+<script>
+  const img = document.getElementById("dash");
+  function refresh() {
+    const next = new Image();
+    next.onload = () => { img.src = next.src; };
+    next.src = ${JSON.stringify(src)} + "&t=" + Date.now();
+    // Next update 2 seconds after the next minute starts, so the clock stays right.
+    setTimeout(refresh, 62000 - (Date.now() % 60000));
+  }
+  setTimeout(refresh, 62000 - (Date.now() % 60000));
+</script>
+</body></html>`;
 }
 
 export { WIDTH, HEIGHT };
