@@ -13,7 +13,7 @@ const here = p => fileURLToPath(new URL(p, import.meta.url));
 const env = {};
 if (existsSync(here("../.env"))) {
   for (const l of readFileSync(here("../.env"), "utf8").split("\n")) {
-    const m = l.match(/^\s*([A-Z_]+)\s*=\s*"?(.*?)"?\s*$/);
+    const m = l.match(/^\s*([A-Z0-9_]+)\s*=\s*"?(.*?)"?\s*$/);
     if (m) env[m[1]] = m[2];
   }
 }
@@ -45,7 +45,7 @@ function demoSvg() {
       { name: "Strand", letter: "", routes: [bus("9", "Aldwych", [0, 12])] },
     ] },
     car: { ok: true, value: {
-      label: "Home to work", minutes: 27, usualMinutes: 19, delayMinutes: 8, miles: 9.4, arrival: at(27),
+      label: "Langdon Academy", minutes: 27, usualMinutes: 19, delayMinutes: 8, miles: 9.4, arrival: at(27),
       incidents: [
         { kind: "Roadworks", road: "A4", where: "Cromwell Road to Earls Court Road", severity: 2 },
         { kind: "Queue", road: "A3", where: "Wandsworth Bridge Roundabout", severity: 3 },
