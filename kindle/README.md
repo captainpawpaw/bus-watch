@@ -5,7 +5,7 @@ Turns an old e-ink Kindle into a wall dashboard showing:
 - the current time and date
 - weather now, the next 12 hours, and tomorrow
 - live TfL bus times for your stops, with "leave in N min"
-- drive time with live traffic for one journey, plus roadworks and incidents on the route
+- drive time and arrival time with live traffic for journeys at set times, a small route map, and roadworks and incidents on the route
 - gas and electricity use from your smart meter (yesterday, today so far, and the last 7 days)
 
 ![Example dashboard](example.png)
@@ -31,8 +31,9 @@ Any section you don't set up is left out, and the buses get the space.
 | `BUS_WALK_MINUTES` | Optional. How long it takes you to walk to the stop. Shows "Leave in N min". | e.g. `4` |
 | `TOMTOM_KEY` | Drive time and traffic. Free: 2,500 lookups a day. Each update in a journey's time window uses 2. | Sign up at developer.tomtom.com, then copy the key from your dashboard there. |
 | `DRIVE_FROM` | Where your drives start | A UK postcode, e.g. `E6 2PS`, or `latitude,longitude` |
-| `DRIVE_1`, `DRIVE_2`, … | Each journey and when to show it: `days times \| name \| destination`. It shows (and uses TomTom) only during those times. | e.g. `Mon-Fri 06:00-07:30 \| Langdon Academy \| E6 2PS` and `Sat-Sun 18:00-20:00 \| Asda Beckton \| E6 5JP`. Days can also be `Weekdays`, `Weekends`, `Daily` or `Sat,Sun`. |
+| `DRIVE_1`, `DRIVE_2`, … | Each journey and when to show it: `days times \| name \| destination`. It shows (and uses TomTom) only during those times. | e.g. `Mon-Fri 06:00-07:30 \| Langdon Academy \| E6 2PS` and `Sat-Sun 18:00-20:00 \| Asda Beckton \| E6 5JP`. Days can also be `Weekdays`, `Weekends`, `Daily` or `Sat,Sun`. To follow your own route instead of the fastest, add `\| via latitude,longitude` parts for points in the middle of roads you take, in order (avoid dual carriageways, where a point can land on the wrong side). |
 | `DRIVE_TO`, `DRIVE_LABEL` | Optional: one journey shown all day instead | Postcode or `latitude,longitude`, and a name |
+| `DRIVE_MAP` | Optional. A small map of the route is shown beside the drive time; set `off` to hide it and give the buses more room. | `off` |
 | `GLOW_USERNAME`, `GLOW_PASSWORD` | Your smart meter, via the free **Bright** app (works with any UK supplier) | Install Bright (by Hildebrand), sign up and link your meter. Use that email and password. |
 | `TFL_APP_KEY` | Optional. Only needed if TfL starts refusing requests. | api-portal.tfl.gov.uk |
 | `TIMEZONE` | Optional. Defaults to `Europe/London`. | |
