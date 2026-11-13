@@ -2,7 +2,7 @@
 // (the SVG -> pixels renderer) and the font files.
 import { getWeather } from "./weather.js";
 import { getBuses } from "./buses.js";
-import { getDrive } from "./driving.js";
+import { getDrive, hasDrives } from "./driving.js";
 import { getEnergy } from "./energy.js";
 import { renderSvg, WIDTH, HEIGHT } from "./render.js";
 import { greyPng } from "./png.js";
@@ -16,10 +16,12 @@ export async function buildSvg(env, now = new Date()) {
   const [weather, bus, car, power] = await Promise.all([
     settle(true, () => getWeather(env)),
     settle(true, () => getBuses(env, now)),
-    settle(!!(env.TOMTOM_KEY && env.DRIVE_FROM && env.DRIVE_TO), () => getDrive(env)),
+    settle(hasDrives(env), () => getDrive(env, now)),
     settle(!!(env.GLOW_USERNAME && env.GLOW_PASSWORD), () => getEnergy(env, now)),
   ]);
-  return renderSvg({ now, zone: tz(env), weather, bus, car, power });
+  // A drive outside its days and hours is left out, like one that isn't set up.
+  const drive = car.ok && car.value === null ? { ok: false, missing: true } : car;
+  return renderSvg({ now, zone: tz(env), weather, bus, car: drive, power });
 }
 
 export async function svgToPng(svg, Resvg, fonts) {

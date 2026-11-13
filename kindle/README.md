@@ -29,9 +29,10 @@ Any section you don't set up is left out, and the buses get the space.
 | `HOME_LATLON` | Where to get the weather for, as `latitude,longitude` | In Google Maps, press and hold on your home; the numbers at the top are it. E.g. `51.54,0.13` |
 | `BUS_STOPS` | Your stops, separated by `;`. Add `:` and routes to show only those routes. | Find the stop on tfl.gov.uk; its ID is in the page address, e.g. `tfl.gov.uk/bus/stop/490000077E/...`. Example: `490000077E:5,145; 490005183E` |
 | `BUS_WALK_MINUTES` | Optional. How long it takes you to walk to the stop. Shows "Leave in N min". | e.g. `4` |
-| `TOMTOM_KEY` | Drive time and traffic. Free: 2,500 lookups a day (this uses about 1,100). | Sign up at developer.tomtom.com, then copy the key from your dashboard there. |
-| `DRIVE_FROM`, `DRIVE_TO` | The journey, as `latitude,longitude` each | Same Google Maps trick as above. |
-| `DRIVE_LABEL` | Optional name for the journey | e.g. `Home to work` |
+| `TOMTOM_KEY` | Drive time and traffic. Free: 2,500 lookups a day. Each update in a journey's time window uses 2. | Sign up at developer.tomtom.com, then copy the key from your dashboard there. |
+| `DRIVE_FROM` | Where your drives start | A UK postcode, e.g. `E6 2PS`, or `latitude,longitude` |
+| `DRIVE_1`, `DRIVE_2`, … | Each journey and when to show it: `days times \| name \| destination`. It shows (and uses TomTom) only during those times. | e.g. `Mon-Fri 06:00-07:30 \| Langdon Academy \| E6 2PS` and `Sat-Sun 18:00-20:00 \| Asda Beckton \| E6 5JP`. Days can also be `Weekdays`, `Weekends`, `Daily` or `Sat,Sun`. |
+| `DRIVE_TO`, `DRIVE_LABEL` | Optional: one journey shown all day instead | Postcode or `latitude,longitude`, and a name |
 | `GLOW_USERNAME`, `GLOW_PASSWORD` | Your smart meter, via the free **Bright** app (works with any UK supplier) | Install Bright (by Hildebrand), sign up and link your meter. Use that email and password. |
 | `TFL_APP_KEY` | Optional. Only needed if TfL starts refusing requests. | api-portal.tfl.gov.uk |
 | `TIMEZONE` | Optional. Defaults to `Europe/London`. | |

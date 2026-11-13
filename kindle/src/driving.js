@@ -1,6 +1,13 @@
 // Drive time with live traffic, plus incidents along the route, from TomTom.
-// Needs a free TomTom developer key (TOMTOM_KEY), DRIVE_FROM and DRIVE_TO.
-import { getJson, parseLatLon } from "./util.js";
+//
+// DRIVE_FROM is where you start: a UK postcode (e.g. "E6 2PS") or "latitude,longitude".
+// Each journey is a setting DRIVE_1, DRIVE_2, ... (up to 9), written as
+//   "<days> <from time>-<to time> | <name> | <destination>"
+// e.g. "Mon-Fri 06:00-07:30 | Langdon Academy | E6 2PS". A journey only shows
+// (and only uses TomTom lookups) during its days and hours. Days can be like
+// "Mon-Fri", "Sat,Sun", "Weekdays", "Weekends" or "Daily".
+// The older DRIVE_TO (+ DRIVE_LABEL) setting still works and shows all the time.
+import { getJson, parseLatLon, tz } from "./util.js";
 
 const CATEGORY = {
   1: "Accident", 2: "Fog", 3: "Hazard", 4: "Rain", 5: "Ice", 6: "Queue",
@@ -8,10 +15,83 @@ const CATEGORY = {
   11: "Flooding", 14: "Broken down vehicle",
 };
 
-export async function getDrive(env) {
+const DAYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
+
+function parseDays(text) {
+  const t = text.toLowerCase();
+  if (t === "daily" || t === "everyday" || t === "all") return new Set([0, 1, 2, 3, 4, 5, 6]);
+  if (t === "weekdays") return new Set([1, 2, 3, 4, 5]);
+  if (t === "weekends") return new Set([0, 6]);
+  const out = new Set();
+  for (const part of t.split(",")) {
+    const [a, b] = part.split("-").map(d => DAYS.indexOf(d.trim().slice(0, 3)));
+    if (a < 0 || (b !== undefined && b < 0)) throw new Error(`Can't read the days "${text}"`);
+    if (b === undefined) { out.add(a); continue; }
+    for (let d = a; ; d = (d + 1) % 7) { out.add(d); if (d === b) break; }
+  }
+  return out;
+}
+
+const toMinutes = hhmm => {
+  const m = hhmm.trim().match(/^(\d{1,2})[:.](\d{2})$/);
+  if (!m) throw new Error(`Can't read the time "${hhmm}"`);
+  return +m[1] * 60 + +m[2];
+};
+
+export function parseJourney(text, name) {
+  const [when, label, to] = String(text).split("|").map(s => s.trim());
+  if (!when || !to) throw new Error(`${name} should look like "Mon-Fri 06:00-07:30 | School | E6 2PS"`);
+  const m = when.match(/^(.*?)\s+(\S+)\s*-\s*(\S+)$/);
+  if (!m) throw new Error(`${name}: can't read "${when}"`);
+  return { days: parseDays(m[1].replace(/\s+/g, "")), start: toMinutes(m[2]), end: toMinutes(m[3]), label, to };
+}
+
+// The journey to show right now, or null if none is due.
+export function activeJourney(env, now) {
+  const zone = tz(env);
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: zone, weekday: "short", hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+  }).formatToParts(now);
+  const get = t => parts.find(p => p.type === t).value;
+  const day = DAYS.indexOf(get("weekday").toLowerCase().slice(0, 3));
+  const mins = +get("hour") * 60 + +get("minute");
+  for (let i = 1; i <= 9; i++) {
+    const text = env[`DRIVE_${i}`];
+    if (!text) continue;
+    const j = parseJourney(text, `DRIVE_${i}`);
+    if (j.days.has(day) && mins >= j.start && mins <= j.end) return j;
+  }
+  if (env.DRIVE_TO) return { label: env.DRIVE_LABEL || "Drive", to: env.DRIVE_TO };
+  return null;
+}
+
+export const hasDrives = env =>
+  !!(env.TOMTOM_KEY && env.DRIVE_FROM &&
+    (env.DRIVE_TO || [1, 2, 3, 4, 5, 6, 7, 8, 9].some(i => env[`DRIVE_${i}`])));
+
+// "latitude,longitude" or a UK postcode (looked up on postcodes.io, then remembered).
+const places = new Map();
+async function resolvePlace(text, name) {
+  if (/^\s*-?\d+(\.\d+)?\s*,\s*-?\d+(\.\d+)?\s*$/.test(text)) return parseLatLon(text, name);
+  const pc = String(text || "").replace(/\s+/g, "").toUpperCase();
+  if (!/^[A-Z]{1,2}\d[A-Z\d]?\d[A-Z]{2}$/.test(pc)) {
+    throw new Error(`${name} should be a postcode or latitude,longitude`);
+  }
+  if (!places.has(pc)) {
+    const r = await getJson(`https://api.postcodes.io/postcodes/${pc}`);
+    places.set(pc, { lat: r.result.latitude, lon: r.result.longitude });
+  }
+  return places.get(pc);
+}
+
+export async function getDrive(env, now = new Date()) {
   if (!env.TOMTOM_KEY) throw new Error("TOMTOM_KEY is not set");
-  const from = parseLatLon(env.DRIVE_FROM, "DRIVE_FROM");
-  const to = parseLatLon(env.DRIVE_TO, "DRIVE_TO");
+  const journey = activeJourney(env, now);
+  if (!journey) return null; // Nothing due now: the section is left out.
+  const [from, to] = await Promise.all([
+    resolvePlace(env.DRIVE_FROM, "DRIVE_FROM"),
+    resolvePlace(journey.to, journey.label),
+  ]);
   const key = encodeURIComponent(env.TOMTOM_KEY);
 
   const route = await getJson(
@@ -29,7 +109,7 @@ export async function getDrive(env) {
   }
 
   return {
-    label: env.DRIVE_LABEL || "Drive",
+    label: journey.label,
     minutes: Math.round(s.travelTimeInSeconds / 60),
     usualMinutes: Math.round((s.noTrafficTravelTimeInSeconds ?? s.travelTimeInSeconds) / 60),
     delayMinutes: Math.round((s.trafficDelayInSeconds || 0) / 60),
