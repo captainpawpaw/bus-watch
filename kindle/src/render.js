@@ -141,7 +141,9 @@ function buses(result, zone, top, bottom) {
     y += 6;
     if (!stop.routes.length) {
       y += 26;
-      out += text(M, y, "No buses due", { size: 18, fill: GREY });
+      out += text(M, y, stop.error ? `Couldn't load this stop: ${stop.error}` : "No buses due",
+        { size: stop.error ? 16 : 18, fill: GREY, max: WIDTH - 2 * M });
+      y += 10;
       continue;
     }
     for (const r of stop.routes) {

@@ -56,43 +56,38 @@ If you change a setting later, go to the project's **Deployments** page on Verce
 
 ## Part 3: Set up the Kindle
 
+These steps follow the jailbreak guides on kindlemodding.org, which are kept up to date. If anything
+there differs from this summary, follow the website.
+
 **Before anything else: turn on Airplane mode on the Kindle.** That stops it from updating itself,
 because an update can block the jailbreak.
 
-1. **Find your firmware:** Settings → Device Options → Device Info.
-2. **Jailbreak it** with the method for your firmware. Follow the guide for your model and firmware on
-   kindlemodding.org or the MobileRead forums (Kindle Developer's Corner).
-   - Do the guide's step to **block automatic updates** before you turn Wi‑Fi back on.
-   - Install **KUAL** (the guides cover this). That's the menu you'll start the dashboard from.
-3. **Download kindle-dash:** get the latest release `.tgz` from
-   github.com/pascalw/kindle-dash/releases and extract it on your computer.
-4. **Add your settings:** copy the two files from `on-kindle/local/` in this repo over the ones in the
+1. **Check your firmware:** Settings → Device Options → Device Info. The **WinterBreak** jailbreak
+   works on firmware before 5.18.1 (e.g. 5.16.2.1.1). For other versions, use "Find my Jailbreak" on
+   kindlemodding.org.
+2. **Fill the storage** so it can't download an update during the jailbreak: follow
+   kindlemodding.org → Jailbreaking → *Prevent Automatic Updates* (it uses a filler script, leaving
+   50 to 90 MB free).
+3. **Jailbreak with WinterBreak:** kindlemodding.org → Jailbreaking → *WinterBreak*. You copy its files
+   to the Kindle, then open the Kindle Store, which starts it. The Kindle needs to be registered to an
+   Amazon account. Updates are blocked automatically afterwards, and you can then delete the filler files.
+4. **Download kindle-dash:** get the latest release `.tgz` from github.com/pascalw/kindle-dash/releases
+   and extract it on your computer (7-Zip can open `.tgz` files).
+5. **Add your settings:** copy the two files from `on-kindle/local/` in this repo over the ones in the
    extracted `local/` folder. Then edit `local/fetch-dashboard.sh` and put in your Vercel address and `DASH_TOKEN`.
-5. **Plugged-in mode (recommended):** kindle-dash was built on an older Kindle, and its wake-up timer may not
-   work on the 8th generation. If it doesn't, the Kindle goes to sleep and only the power button wakes it.
-   To avoid that, open `dash.sh` in a text editor, find this line:
+6. **Copy it over:** plug the Kindle into your computer by USB. Copy the extracted kindle-dash folder to
+   the Kindle's drive and name it `dashboard` (so `dash.sh` is at `dashboard/dash.sh`). Then copy
+   `on-kindle/documents/Bus Dashboard.sh` from this repo into the Kindle's `documents` folder.
+7. Eject the Kindle, turn Airplane mode off and connect to Wi‑Fi. **Plug it into a USB charger.**
+8. In your library, tap **Bus Dashboard**. After about 10 to 20 seconds your dashboard appears.
 
-   ```sh
-       echo "mem" >/sys/power/state
-   ```
+The **Bus Dashboard** "book" is a scriptlet: a small script the jailbreak lets you run from the
+library. (KUAL, the older app menu, doesn't work with current jailbreaks.) It also switches kindle-dash
+to plugged-in mode, where the Kindle stays awake between updates instead of going into deep sleep.
+kindle-dash's wake-up timer was made for the Kindle 4 and may not wake newer models, so **keep it
+plugged in**. Updating every 2 minutes would use up the battery in about a day either way.
 
-   and change it to:
-
-   ```sh
-       sleep "$duration"
-   ```
-
-   The Kindle then stays awake between updates, so **keep it plugged into USB power**.
-   Updating every 2 minutes would use up the battery in about a day either way.
-6. **Copy it over:** plug the Kindle into your computer by USB. It shows up as a drive. Copy the whole
-   extracted folder to the drive and name it `dashboard` (so `start.sh` is at `dashboard/start.sh`).
-   Also copy `on-kindle/extensions/kindle-dash` from this repo into the drive's `extensions` folder
-   (this adds "Kindle Dashboard" to the KUAL menu).
-7. Eject the Kindle, turn Airplane mode off and connect to Wi‑Fi (only after updates are blocked).
-8. Open **KUAL → Kindle Dashboard**. After about 10 to 20 seconds your dashboard appears.
-
-**To get the normal Kindle back:** restart it (hold the power button for about 40 seconds, or choose
-Restart from the power menu).
+**To get the normal Kindle back:** restart it (hold the power button for about 40 seconds).
 
 **If the screen doesn't change:** look at `dashboard/logs/dash.log` on the Kindle's drive (connect it
 by USB). It shows each update and any error.
