@@ -92,11 +92,18 @@ export async function getDrive(env, now = new Date()) {
     resolvePlace(env.DRIVE_FROM, "DRIVE_FROM"),
     resolvePlace(journey.to, journey.label),
   ]);
-  const key = encodeURIComponent(env.TOMTOM_KEY);
+  // Trim stray spaces or line breaks that can come along when pasting the key.
+  const key = encodeURIComponent(String(env.TOMTOM_KEY).trim());
 
-  const route = await getJson(
-    `https://api.tomtom.com/routing/1/calculateRoute/${from.lat},${from.lon}:${to.lat},${to.lon}/json` +
-    `?key=${key}&traffic=true&travelMode=car&computeTravelTimeFor=all&routeRepresentation=polyline`);
+  let route;
+  try {
+    route = await getJson(
+      `https://api.tomtom.com/routing/1/calculateRoute/${from.lat},${from.lon}:${to.lat},${to.lon}/json` +
+      `?key=${key}&traffic=true&travelMode=car&computeTravelTimeFor=all&routeRepresentation=polyline`);
+  } catch (e) {
+    if (/replied 40[13]\b/.test(e.message)) throw new Error("TomTom rejected TOMTOM_KEY, check it");
+    throw e;
+  }
   const r = route.routes[0];
   const s = r.summary;
   const points = r.legs.flatMap(l => l.points);

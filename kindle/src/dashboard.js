@@ -61,7 +61,9 @@ export async function handle(request, env, { Resvg, fonts }) {
 // A page for phones and computers that shows the dashboard and refreshes it
 // just after each minute, swapping the picture only once the new one has loaded.
 function viewerPage(key) {
-  const src = `/dashboard.svg?key=${encodeURIComponent(key)}`;
+  // The PNG, not the SVG: it has the dashboard's font built in, so it looks
+  // exactly like the Kindle (browsers don't have Inter and fall back to Times).
+  const src = `/dashboard.png?key=${encodeURIComponent(key)}`;
   return `<!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8">
@@ -71,7 +73,7 @@ function viewerPage(key) {
 <style>
   html, body { margin: 0; height: 100%; background: #111; }
   body { display: flex; align-items: center; justify-content: center; }
-  img { max-width: 100vw; max-height: 100vh; background: #fff; }
+  img { max-width: 100vw; max-height: 100vh; background: #fff; image-rendering: auto; }
 </style>
 </head><body>
 <img id="dash" src="${src}&t=${Date.now()}" alt="Dashboard">
