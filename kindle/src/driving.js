@@ -6,6 +6,8 @@
 // e.g. "Mon-Fri 06:00-07:30 | Langdon Academy | E6 2PS". A journey only shows
 // (and only uses TomTom lookups) during its days and hours. Days can be like
 // "Mon-Fri", "Sat,Sun", "Weekdays", "Weekends" or "Daily".
+// To follow your own route rather than the fastest, add "| via latitude,longitude"
+// parts (points in the middle of roads you take, in order).
 // The older DRIVE_TO (+ DRIVE_LABEL) setting still works and shows all the time.
 import { getJson, parseLatLon, tz } from "./util.js";
 
@@ -39,11 +41,18 @@ const toMinutes = hhmm => {
 };
 
 export function parseJourney(text, name) {
-  const [when, label, to] = String(text).split("|").map(s => s.trim());
+  const [when, label, to, ...extra] = String(text).split("|").map(s => s.trim());
+  // Optional "via latitude,longitude" parts make the route go that way
+  // instead of the fastest way, e.g. "| via 51.5470,0.0967 | via 51.5409,0.0770".
+  const via = extra.filter(Boolean).map(v => {
+    const m = v.match(/^via\s+(.+)$/i);
+    if (!m) throw new Error(`${name}: "${v}" should start with "via"`);
+    return m[1];
+  });
   if (!when || !to) throw new Error(`${name} should look like "Mon-Fri 06:00-07:30 | School | E6 2PS"`);
   const m = when.match(/^(.*?)\s+(\S+)\s*-\s*(\S+)$/);
   if (!m) throw new Error(`${name}: can't read "${when}"`);
-  return { days: parseDays(m[1].replace(/\s+/g, "")), start: toMinutes(m[2]), end: toMinutes(m[3]), label, to };
+  return { days: parseDays(m[1].replace(/\s+/g, "")), start: toMinutes(m[2]), end: toMinutes(m[3]), label, to, via };
 }
 
 // The journey to show right now, or null if none is due.
@@ -88,17 +97,19 @@ export async function getDrive(env, now = new Date()) {
   if (!env.TOMTOM_KEY) throw new Error("TOMTOM_KEY is not set");
   const journey = activeJourney(env, now);
   if (!journey) return null; // Nothing due now: the section is left out.
-  const [from, to] = await Promise.all([
+  const [from, to, ...via] = await Promise.all([
     resolvePlace(env.DRIVE_FROM, "DRIVE_FROM"),
     resolvePlace(journey.to, journey.label),
+    ...(journey.via || []).map(v => resolvePlace(v, `${journey.label} via`)),
   ]);
+  const path = [from, ...via, to].map(p => `${p.lat},${p.lon}`).join(":");
   // Trim stray spaces or line breaks that can come along when pasting the key.
   const key = encodeURIComponent(String(env.TOMTOM_KEY).trim());
 
   let route;
   try {
     route = await getJson(
-      `https://api.tomtom.com/routing/1/calculateRoute/${from.lat},${from.lon}:${to.lat},${to.lon}/json` +
+      `https://api.tomtom.com/routing/1/calculateRoute/${path}/json` +
       `?key=${key}&traffic=true&travelMode=car&computeTravelTimeFor=all&routeRepresentation=polyline`);
   } catch (e) {
     if (/replied 40[13]\b/.test(e.message)) throw new Error("TomTom rejected TOMTOM_KEY, check it");
