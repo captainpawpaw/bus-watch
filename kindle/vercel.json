@@ -16,6 +16,10 @@
     {
       "source": "/dashboard.svg",
       "destination": "/api/dashboard?format=svg"
+    },
+    {
+      "source": "/view",
+      "destination": "/api/dashboard?format=html"
     }
   ]
 }
