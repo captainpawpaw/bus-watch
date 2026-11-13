@@ -166,22 +166,65 @@ function buses(result, zone, top, bottom) {
   return out;
 }
 
+export const DRIVE_H = 132;
+export const DRIVE_MAP_H = 176;
+
+function incidentLine(inc, x, y, max) {
+  const what = [inc.kind, inc.road, inc.where].filter(Boolean).join(" · ");
+  return `<path d="M${x + 7} ${y - 14} L${x + 15} ${y} H${x - 1} Z" fill="#000"/>` +
+    text(x + 22, y, what, { size: 16, bold: inc.severity >= 3, max: max - 22 });
+}
+
+function routeMap(m, x, y) {
+  const pts = m.line.map(([px, py]) => `${px},${py}`).join(" ");
+  let out = `<defs><clipPath id="mapclip"><rect width="${m.w}" height="${m.h}"/></clipPath></defs>`;
+  out += `<g transform="translate(${x} ${y})"><g clip-path="url(#mapclip)">`;
+  out += `<rect width="${m.w}" height="${m.h}" fill="#fff"/>`;
+  // Faded street map, so the route stands out on e-ink.
+  if (m.image) out += `<image href="${m.image}" width="${m.w}" height="${m.h}" opacity="0.45"/>`;
+  out += `<polyline points="${pts}" fill="none" stroke="#fff" stroke-width="8" stroke-linejoin="round" stroke-linecap="round"/>`;
+  out += `<polyline points="${pts}" fill="none" stroke="#000" stroke-width="4" stroke-linejoin="round" stroke-linecap="round"/>`;
+  for (const [mx, my] of m.marks) {
+    out += `<path d="M${mx} ${my - 9} L${mx + 8} ${my + 5} H${mx - 8} Z" fill="#000" stroke="#fff" stroke-width="2"/>`;
+  }
+  const [sx, sy] = m.start, [ex, ey] = m.end;
+  out += `<circle cx="${sx}" cy="${sy}" r="6" fill="#000" stroke="#fff" stroke-width="2"/>`;
+  out += `<circle cx="${ex}" cy="${ey}" r="8" fill="#fff" stroke="#000" stroke-width="3"/>` +
+    `<circle cx="${ex}" cy="${ey}" r="3" fill="#000"/>`;
+  out += `</g><rect width="${m.w}" height="${m.h}" fill="none" stroke="#000" stroke-width="1.5"/></g>`;
+  return out;
+}
+
 function drive(result, zone, top) {
   let y = top + 22;
   if (!result.ok) return heading(y, "Drive") + unavailable(y + 30, "Drive time", result.error);
   const d = result.value;
-  let out = heading(y, `Drive · ${d.label}`);
-  y += 46;
-  out += text(M, y, `${d.minutes} min`, { size: 42, bold: true });
-  const x = M + textWidth(`${d.minutes} min`, 42, true) + 18;
-  // The ETA if you leave now, then how traffic compares with usual.
-  out += text(x, y - 18, `Arrive ${clock(d.arrival, zone)}`, { size: 24, bold: true });
+  const map = d.map;
+  // With a map, the text sits in a column to its left.
+  const right = map ? RIGHT - map.w - 14 : RIGHT;
+  let out = map ? routeMap(map, RIGHT - map.w, top + 12) : "";
+  out += text(M, y, `Drive · ${d.label}`.toUpperCase(), { size: 15, bold: true, fill: GREY, max: right - M });
+
+  const arrive = `Arrive ${clock(d.arrival, zone)}`;
   const delay = d.delayMinutes > 0 ? `+${d.delayMinutes} min traffic`
     : d.delayMinutes < 0 ? `${-d.delayMinutes} min quicker` : "Normal traffic";
-  out += text(x, y + 2, `${delay} · usually ${d.usualMinutes} min`,
-    { size: 16, fill: d.delayMinutes >= 5 ? "#000" : GREY, bold: d.delayMinutes >= 5, max: RIGHT - x });
+  const delayStyle = { size: 16, fill: d.delayMinutes >= 5 ? "#000" : GREY, bold: d.delayMinutes >= 5 };
 
-  y += 4;
+  if (map) {
+    // The ETA if you leave now, then how traffic compares with usual.
+    out += text(M, top + 64, `${d.minutes} min`, { size: 42, bold: true });
+    out += text(M, top + 96, arrive, { size: 24, bold: true });
+    out += text(M, top + 118, `${delay} · usually ${d.usualMinutes} min`, { ...delayStyle, max: right - M });
+    y = top + 122;
+  } else {
+    y += 46;
+    out += text(M, y, `${d.minutes} min`, { size: 42, bold: true });
+    const x = M + textWidth(`${d.minutes} min`, 42, true) + 18;
+    out += text(x, y - 18, arrive, { size: 24, bold: true });
+    out += text(x, y + 2, `${delay} · usually ${d.usualMinutes} min`, { ...delayStyle, max: RIGHT - x });
+    y += 4;
+  }
+
   if (d.incidents === null) {
     out += text(M, y + 22, "Incidents unavailable", { size: 16, fill: GREY });
   } else if (!d.incidents.length) {
@@ -189,11 +232,13 @@ function drive(result, zone, top) {
   } else {
     for (const inc of d.incidents.slice(0, 2)) {
       y += 22;
-      out += `<path d="M${M + 7} ${y - 14} L${M + 15} ${y} H${M - 1} Z" fill="#000"/>`;
-      const what = [inc.kind, inc.road, inc.where].filter(Boolean).join(" · ");
-      out += text(M + 22, y, what, { size: 16, bold: inc.severity >= 3, max: RIGHT - M - 22 });
+      out += incidentLine(inc, M, y, right - M);
     }
-    if (d.incidents.length > 2) out += text(RIGHT, top + 22, `+${d.incidents.length - 2} more`, { size: 15, fill: GREY, anchor: "end" });
+    if (d.incidents.length > 2) {
+      // Under the map when there is one, otherwise on the heading line.
+      out += text(RIGHT, map ? top + 164 : top + 22, `+${d.incidents.length - 2} more`,
+        { size: 15, fill: GREY, anchor: "end" });
+    }
   }
   return out;
 }
@@ -243,7 +288,7 @@ export function renderSvg({ now, zone, weather, bus, car, power }) {
     energySvg = line(bottom) + energy(power, bottom);
   }
   if (showDrive) {
-    bottom -= 132;
+    bottom -= car.ok && car.value.map ? DRIVE_MAP_H : DRIVE_H;
     driveSvg = line(bottom) + drive(car, zone, bottom);
   }
   const body = header(now, zone, weather) + forecast(weather) + buses(bus, zone, 298, bottom) + driveSvg + energySvg;

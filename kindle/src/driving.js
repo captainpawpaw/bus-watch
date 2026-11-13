@@ -10,6 +10,7 @@
 // parts (points in the middle of roads you take, in order).
 // The older DRIVE_TO (+ DRIVE_LABEL) setting still works and shows all the time.
 import { getJson, parseLatLon, tz } from "./util.js";
+import { buildMap } from "./map.js";
 
 const CATEGORY = {
   1: "Accident", 2: "Fog", 3: "Hazard", 4: "Rain", 5: "Ice", 6: "Queue",
@@ -126,8 +127,19 @@ export async function getDrive(env, now = new Date()) {
     incidents = null; // Journey time still shows; incidents just say unavailable.
   }
 
+  // A small map of the route (turn off with DRIVE_MAP=off).
+  let map = null;
+  if (String(env.DRIVE_MAP || "").toLowerCase() !== "off") {
+    try {
+      map = await buildMap(String(env.TOMTOM_KEY).trim(), points, incidents || []);
+    } catch {
+      map = null;
+    }
+  }
+
   return {
     label: journey.label,
+    map,
     minutes: Math.round(s.travelTimeInSeconds / 60),
     // "Usually" is TomTom's typical time for this time of day (from past traffic),
     // so the difference is how much worse (or better) than normal it is right now.
@@ -184,7 +196,10 @@ async function incidentsOnRoute(key, points) {
     .map(f => {
       const p = f.properties;
       const road = (p.roadNumbers || [])[0] || "";
+      const g = f.geometry;
+      const coords = g.type === "Point" ? [g.coordinates] : g.coordinates;
       return {
+        at: coords[Math.floor(coords.length / 2)], // [lon, lat], for the map
         kind: CATEGORY[p.iconCategory] || "Incident",
         road,
         where: [p.from, p.to].filter(Boolean).join(" to "),
