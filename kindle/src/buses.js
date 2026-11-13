@@ -1,7 +1,8 @@
 // Live bus arrivals from TfL.
 //
 // BUS_STOPS lists stops separated by ";". Each is a TfL stop ID, optionally
-// followed by ":" and the routes to show, e.g. "490000077E:5,145; 490005183E".
+// followed by ":" and the routes to show, and "@" and your walk to it in minutes,
+// e.g. "490008458N:62@7; 490008457N:368@10". Without "@", BUS_WALK_MINUTES is used.
 import { getJson } from "./util.js";
 
 export function parseStops(text) {
@@ -9,10 +10,13 @@ export function parseStops(text) {
   // and stops can also be on separate lines.
   const clean = t => t.replace(/[^0-9A-Za-z]/g, "");
   return String(text || "").split(/[;\n]/).map(s => s.trim()).filter(Boolean).map(s => {
-    const [id, routes] = s.split(":");
+    const [main, walk] = s.split("@");
+    const [id, routes] = main.split(":");
+    const mins = parseFloat(walk);
     return {
       id: clean(id).toUpperCase(),
       routes: routes ? routes.split(",").map(r => clean(r).toLowerCase()).filter(Boolean) : [],
+      walk: Number.isFinite(mins) ? mins : null,
     };
   }).filter(s => s.id);
 }
@@ -23,7 +27,7 @@ export async function getBuses(env, now) {
   const key = env.TFL_APP_KEY ? `?app_key=${encodeURIComponent(env.TFL_APP_KEY)}` : "";
   const walk = Number(env.BUS_WALK_MINUTES) || 0;
 
-  return Promise.all(stops.map(stop => getStop(stop, key, walk, now).catch(error => ({
+  return Promise.all(stops.map(stop => getStop(stop, key, stop.walk ?? walk, now).catch(error => ({
     // One bad stop shouldn't hide the others.
     name: stop.id, letter: "", routes: [], leave: null,
     error: /\b404\b/.test(error.message) ? "stop ID not found, check it in BUS_STOPS" : error.message,
@@ -55,8 +59,9 @@ async function getStop(stop, key, walk, now) {
     .map(([route, buses]) => ({ route, towards: buses[0].towards, buses }))
     .sort((a, b) => a.buses[0].at - b.buses[0].at);
 
-  // The first bus you can still walk to in time.
-  const catchable = walk ? wanted.find(a => a.mins >= walk) : null;
+  // The first bus you can still walk to in time, and when to set off for it.
+  const catchable = walk ? wanted.find(a => a.at - now >= walk * 60000) : null;
+  const leaveAt = catchable ? new Date(catchable.at.getTime() - walk * 60000) : null;
 
   let name = arrivals[0]?.stationName;
   let letter = arrivals[0]?.platformName;
@@ -73,6 +78,10 @@ async function getStop(stop, key, walk, now) {
     name: name || stop.id,
     letter: letter && letter !== "null" ? letter : "",
     routes,
-    leave: catchable ? { route: catchable.route, inMins: catchable.mins - walk } : null,
+    leave: catchable ? {
+      route: catchable.route,
+      at: leaveAt,
+      inMins: Math.floor((leaveAt - now) / 60000),
+    } : null,
   };
 }
