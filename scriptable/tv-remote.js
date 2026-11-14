@@ -1,119 +1,21 @@
 // TV Remote for Scriptable (iPhone) — Panasonic Viera (built for the TX-40ES400 series)
 // Run it in the Scriptable app while your phone is on the same Wi-Fi as the TV.
-// It's set to the TV at 192.168.1.222. Tap the gear to change that, or to find the TV for you.
+// It's set to the TV at 192.168.1.222. Tap the gear to change the address.
 // iOS will ask once to let Scriptable find devices on your local network: say Allow.
 // Hold volume, channel or the arrows to repeat.
 
 const DEFAULT_IP = "192.168.1.222";
-const DEFAULT_PREFIX = "192.168.1.";
 const PORT = 55000;
 
 const fm = FileManager.local();
 const CFG = fm.joinPath(fm.documentsDirectory(), "tv-remote-config.json");
 const readCfg = () => { try { return fm.fileExists(CFG) ? JSON.parse(fm.readString(CFG)) : {}; } catch (e) { return {}; } };
-const writeCfg = (v) => fm.writeString(CFG, JSON.stringify(v));
 const validIP = (s) => /^(\d{1,3})(\.\d{1,3}){3}$/.test(s) && s.split(".").every((n) => Number(n) <= 255);
 
 let cfg = readCfg();
-if (!cfg.ip) cfg.ip = DEFAULT_IP;
+if (!validIP(cfg.ip || "")) cfg.ip = DEFAULT_IP;
 
-/* ===================== TALKING TO THE TV ===================== */
-
-async function sendKey(ip, key) {
-  const req = new Request("http://" + ip + ":" + PORT + "/nrc/control_0");
-  req.method = "POST";
-  req.timeoutInterval = 4;
-  req.headers = {
-    "Content-Type": 'text/xml; charset="utf-8"',
-    "SOAPACTION": '"urn:panasonic-com:service:p00NetworkControl:1#X_SendKey"',
-  };
-  req.body =
-    '<?xml version="1.0" encoding="utf-8"?>' +
-    '<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">' +
-    '<s:Body><u:X_SendKey xmlns:u="urn:panasonic-com:service:p00NetworkControl:1">' +
-    "<X_KeyEvent>NRC_" + key + "-ONOFF</X_KeyEvent>" +
-    "</u:X_SendKey></s:Body></s:Envelope>";
-  try {
-    await req.loadString();
-  } catch (e) {
-    return "Can't reach the TV at " + ip;
-  }
-  const code = req.response && req.response.statusCode;
-  if (code && code !== 200) return "TV refused that (" + code + ")";
-  return "";
-}
-
-// Is there a Panasonic TV answering at this address?
-async function isTV(ip) {
-  const req = new Request("http://" + ip + ":" + PORT + "/nrc/ddd.xml");
-  req.timeoutInterval = 2;
-  try {
-    const body = await req.loadString();
-    return req.response.statusCode === 200 && /panasonic|viera|urn:schemas-upnp-org/i.test(body);
-  } catch (e) {
-    return false;
-  }
-}
-
-async function scan(prefix) {
-  const found = [];
-  for (let start = 1; start < 255; start += 32) {
-    const batch = [];
-    for (let i = start; i < Math.min(start + 32, 255); i++) {
-      const ip = prefix + i;
-      batch.push(isTV(ip).then((ok) => { if (ok) found.push(ip); }));
-    }
-    await Promise.all(batch);
-    if (found.length) break;
-  }
-  return found;
-}
-
-/* ===================== SETUP ===================== */
-
-async function say(title, message) {
-  const a = new Alert();
-  a.title = title;
-  a.message = message;
-  a.addAction("OK");
-  await a.present();
-}
-
-async function setup() {
-  for (;;) {
-    const a = new Alert();
-    a.title = "TV address";
-    a.message = "Type the TV's IP address, or let me look for it on your Wi-Fi.\n(On the TV: Menu > Network > Network Status.)";
-    a.addTextField("192.168.1.x", cfg.ip || DEFAULT_PREFIX);
-    a.addAction("Save");
-    a.addAction("Find it for me");
-    a.addCancelAction("Cancel");
-    const pick = await a.present();
-    if (pick === -1) return false;
-    const typed = a.textFieldValue(0).trim();
-
-    if (pick === 0) {
-      if (!validIP(typed)) { await say("That's not a full address", "It should look like 192.168.1.222"); continue; }
-      cfg.ip = typed;
-      writeCfg(cfg);
-      return true;
-    }
-
-    const m = typed.match(/^(\d{1,3}\.\d{1,3}\.\d{1,3}\.)/);
-    const prefix = m ? m[1] : DEFAULT_PREFIX;
-    const found = await scan(prefix);
-    if (!found.length) {
-      await say("No TV found", "Nothing answered on " + prefix + "x. Check the TV is on and on the same Wi-Fi, and that Scriptable is allowed under Settings > Privacy & Security > Local Network.");
-      continue;
-    }
-    cfg.ip = found[0];
-    writeCfg(cfg);
-    await say("Found your TV", "It's at " + cfg.ip);
-    return true;
-  }
-}
-
-/* ===================== THE REMOTE ===================== */
+// The page is loaded as if it came from the TV itself, so its buttons can talk to the TV directly.
 
 const HTML = /*html*/ `<!doctype html>
 <html><head><meta charset="utf-8">
@@ -151,6 +53,13 @@ const HTML = /*html*/ `<!doctype html>
   #toast { position:fixed; left:50%; bottom:calc(20px + env(safe-area-inset-bottom)); transform:translateX(-50%); background:#3a1512; color:#ffb4ad;
            padding:10px 16px; border-radius:12px; font-size:13px; opacity:0; transition:opacity .2s; pointer-events:none; white-space:nowrap; }
   #toast.show { opacity:1; }
+  #set { display:none; margin-bottom:14px; background:var(--key); border-radius:14px; padding:12px; }
+  #set.open { display:block; }
+  #set p { margin:0 0 8px; font-size:12px; color:var(--muted); font-weight:500; }
+  #set div { display:flex; gap:8px; }
+  #set input { flex:1; min-width:0; height:44px; border-radius:10px; border:0; background:var(--bg); color:var(--fg); font:inherit; padding:0 12px;
+               user-select:text; -webkit-user-select:text; }
+  #set button { height:44px; padding:0 16px; background:var(--accent); }
 </style></head><body>
 <header>
   <button class="round power" data-k="POWER" aria-label="Power">⏻</button>
@@ -158,6 +67,11 @@ const HTML = /*html*/ `<!doctype html>
   <button class="round" data-k="CHG_INPUT"><small>INPUT</small></button>
   <button class="round" data-k="__settings" aria-label="Settings">⚙︎</button>
 </header>
+
+<div id="set">
+  <p id="setmsg">TV address (on the TV: Menu &gt; Network &gt; Network Status)</p>
+  <div><input id="ipin" inputmode="decimal" autocomplete="off" value="__IP__"><button id="save">Save</button></div>
+</div>
 
 <div class="pad">
   <span></span><button data-k="UP" data-r aria-label="Up">▲</button><span></span>
@@ -199,22 +113,53 @@ const HTML = /*html*/ `<!doctype html>
 <div id="toast"></div>
 
 <script>
-  // Presses queue here; the Scriptable side collects them one at a time through next().
-  var q = [], pending = null;
-  function press(k) {
-    if (pending) { var d = pending; pending = null; d(k); }
-    else if (q.length < 3) q.push(k);
-  }
-  function next(done) {
-    if (q.length) done(q.shift()); else pending = done;
-  }
-  function setIP(ip) { document.getElementById("ip").textContent = ip; }
   var toastT;
   function toast(msg) {
     var t = document.getElementById("toast");
     t.textContent = msg; t.classList.add("show");
     clearTimeout(toastT); toastT = setTimeout(function () { t.classList.remove("show"); }, 2500);
   }
+
+  // Send one key press to the TV. Presses go one at a time, in order.
+  var chain = Promise.resolve(), waiting = 0;
+  function send(k) {
+    var ctl = new AbortController();
+    var timer = setTimeout(function () { ctl.abort(); }, 4000);
+    return fetch("/nrc/control_0", {
+      method: "POST",
+      signal: ctl.signal,
+      headers: {
+        "Content-Type": 'text/xml; charset="utf-8"',
+        "SOAPACTION": '"urn:panasonic-com:service:p00NetworkControl:1#X_SendKey"'
+      },
+      body: '<?xml version="1.0" encoding="utf-8"?>' +
+        '<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">' +
+        '<s:Body><u:X_SendKey xmlns:u="urn:panasonic-com:service:p00NetworkControl:1">' +
+        '<X_KeyEvent>NRC_' + k + '-ONOFF</X_KeyEvent>' +
+        '</u:X_SendKey></s:Body></s:Envelope>'
+    }).then(function (r) {
+      if (!r.ok) toast("TV refused that (" + r.status + ")");
+    }).catch(function () {
+      toast("Can't reach the TV at __IP__");
+    }).then(function () { clearTimeout(timer); });
+  }
+  function press(k) {
+    if (k === "__settings") { document.getElementById("set").classList.toggle("open"); return; }
+    if (waiting >= 3) return;
+    waiting++;
+    chain = chain.then(function () { return send(k); }).then(function () { waiting--; });
+  }
+
+  // A new address is picked up by the script when you tap Close; it then reopens the remote.
+  window.newIP = "";
+  document.getElementById("save").addEventListener("click", function () {
+    var v = document.getElementById("ipin").value.trim().replace(/,/g, ".");
+    var ok = /^\\d{1,3}(\\.\\d{1,3}){3}$/.test(v) && v.split(".").every(function (n) { return Number(n) <= 255; });
+    var msg = document.getElementById("setmsg");
+    if (!ok) { msg.textContent = "That's not a full address. It should look like 192.168.1.222"; return; }
+    window.newIP = v;
+    msg.textContent = "Saved. Tap Close (top left) and the remote reopens on " + v;
+  });
 
   var holdT, repT;
   function stop(b) { clearTimeout(holdT); clearInterval(repT); if (b) b.classList.remove("down"); }
@@ -233,28 +178,17 @@ const HTML = /*html*/ `<!doctype html>
 </script>
 </body></html>`;
 
-async function run() {
-  if (!validIP(cfg.ip || "")) {
-    if (!(await setup())) return;
-  }
-
+for (;;) {
   const wv = new WebView();
-  await wv.loadHTML(HTML.replace("__IP__", cfg.ip));
+  await wv.loadHTML(HTML.split("__IP__").join(cfg.ip), "http://" + cfg.ip + ":" + PORT + "/");
+  await wv.present(true);
 
-  const CLOSED = {};
-  const closed = wv.present(true).then(() => CLOSED);
-
-  for (;;) {
-    const key = await Promise.race([closed, wv.evaluateJavaScript("next(completion)", true)]);
-    if (key === CLOSED) break;
-    if (key === "__settings") {
-      if (await setup()) await wv.evaluateJavaScript("setIP(" + JSON.stringify(cfg.ip) + ")");
-      continue;
-    }
-    const err = await sendKey(cfg.ip, key);
-    if (err) await wv.evaluateJavaScript("toast(" + JSON.stringify(err) + ")");
-  }
+  // After Close: did the address get changed? If so save it and reopen.
+  let next = "";
+  try { next = await wv.evaluateJavaScript("window.newIP || ''"); } catch (e) {}
+  if (!validIP(next || "") || next === cfg.ip) break;
+  cfg.ip = next;
+  fm.writeString(CFG, JSON.stringify(cfg));
 }
 
-await run();
 Script.complete();
