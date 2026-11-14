@@ -154,7 +154,7 @@ const HTML = /*html*/ `<!doctype html>
 </style></head><body>
 <header>
   <button class="round power" data-k="POWER" aria-label="Power">⏻</button>
-  <div class="name"><b>Panasonic TV</b><span id="ip"></span></div>
+  <div class="name"><b>Panasonic TV</b><span id="ip">__IP__</span></div>
   <button class="round" data-k="CHG_INPUT"><small>INPUT</small></button>
   <button class="round" data-k="__settings" aria-label="Settings">⚙︎</button>
 </header>
@@ -239,8 +239,7 @@ async function run() {
   }
 
   const wv = new WebView();
-  await wv.loadHTML(HTML);
-  await wv.evaluateJavaScript("setIP(" + JSON.stringify(cfg.ip) + ")");
+  await wv.loadHTML(HTML.replace("__IP__", cfg.ip));
 
   const CLOSED = {};
   const closed = wv.present(true).then(() => CLOSED);
