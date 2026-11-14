@@ -24,7 +24,7 @@ const HTML = /*html*/ `<!doctype html>
   :root { --bg:#111317; --key:#23262d; --key2:#2e323b; --fg:#f2f1ee; --muted:#9a9ea8; --accent:#ff4a3d; }
   * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; -webkit-touch-callout:none; user-select:none; -webkit-user-select:none; }
   html,body { margin:0; background:var(--bg); color:var(--fg); font:600 17px -apple-system,system-ui,sans-serif; }
-  body { padding:max(124px, calc(env(safe-area-inset-top) + 76px)) 16px calc(8px + env(safe-area-inset-bottom)); max-width:440px; margin:0 auto; }
+  body { padding:max(60px, calc(env(safe-area-inset-top) + 10px)) 16px calc(8px + env(safe-area-inset-bottom)); max-width:440px; margin:0 auto; }
   header { display:flex; align-items:center; gap:10px; margin-bottom:14px; }
   header .name { flex:1; min-width:0; }
   header .name b { display:block; font-size:19px; }
@@ -80,17 +80,19 @@ const HTML = /*html*/ `<!doctype html>
   <div><input id="ipin" inputmode="decimal" autocomplete="off" value="__IP__"><button id="save">Save</button></div>
 </div>
 
-<div class="pad">
-  <span></span><button data-k="UP" data-r aria-label="Up">▲</button><span></span>
-  <button data-k="LEFT" data-r aria-label="Left">◀</button><button class="ok" data-k="ENTER">OK</button><button data-k="RIGHT" data-r aria-label="Right">▶</button>
-  <span></span><button data-k="DOWN" data-r aria-label="Down">▼</button><span></span>
-</div>
-
 <div class="row c4">
   <button data-k="RETURN"><small>BACK</small></button>
   <button data-k="HOME"><small>HOME</small></button>
   <button data-k="MENU"><small>MENU</small></button>
   <button data-k="CANCEL"><small>EXIT</small></button>
+</div>
+
+<div class="row c5">
+  <button data-k="REW" aria-label="Rewind">⏪︎</button>
+  <button data-k="PLAY" aria-label="Play">▶︎</button>
+  <button data-k="PAUSE" aria-label="Pause">⏸︎</button>
+  <button data-k="STOP" aria-label="Stop">⏹︎</button>
+  <button data-k="FF" aria-label="Fast forward">⏩︎</button>
 </div>
 
 <div class="rockers">
@@ -102,12 +104,10 @@ const HTML = /*html*/ `<!doctype html>
   </div>
 </div>
 
-<div class="row c5">
-  <button data-k="REW" aria-label="Rewind">⏪︎</button>
-  <button data-k="PLAY" aria-label="Play">▶︎</button>
-  <button data-k="PAUSE" aria-label="Pause">⏸︎</button>
-  <button data-k="STOP" aria-label="Stop">⏹︎</button>
-  <button data-k="FF" aria-label="Fast forward">⏩︎</button>
+<div class="pad">
+  <span></span><button data-k="UP" data-r aria-label="Up">▲</button><span></span>
+  <button data-k="LEFT" data-r aria-label="Left">◀</button><button class="ok" data-k="ENTER">OK</button><button data-k="RIGHT" data-r aria-label="Right">▶</button>
+  <span></span><button data-k="DOWN" data-r aria-label="Down">▼</button><span></span>
 </div>
 
 <div id="toast"></div>
