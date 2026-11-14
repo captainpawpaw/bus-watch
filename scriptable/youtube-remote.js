@@ -125,8 +125,11 @@ const HTML = String.raw`<!doctype html>
   #now button { width:46px; height:46px; border-radius:50%; flex:none; background:var(--key2); font-size:20px; }
   #now .pw { background:var(--accent); }
   #now button small { font-size:10px; color:var(--fg); }
-  #bar { margin-top:12px; height:28px; display:flex; align-items:center; }
-  #bar i { display:block; flex:1; height:6px; border-radius:3px; background:var(--key2); position:relative; overflow:hidden; pointer-events:none; }
+  #bar { margin-top:6px; height:40px; display:flex; align-items:center; position:relative; touch-action:none; }
+  #bar i { display:block; flex:1; height:10px; border-radius:5px; background:var(--key2); position:relative; overflow:hidden; pointer-events:none; }
+  #knob { position:absolute; top:50%; left:0; width:22px; height:22px; margin:-11px 0 0 -11px; border-radius:50%; background:var(--fg); pointer-events:none; display:none; }
+  #bar.drag #knob { width:30px; height:30px; margin:-15px 0 0 -15px; }
+  #times { display:flex; justify-content:space-between; margin-top:-6px; font-size:12px; font-weight:500; color:var(--muted); min-height:15px; }
   #bar i u { position:absolute; left:0; top:0; bottom:0; width:0; background:var(--accent); }
 
   /* The main controls: play/pause biggest, skip either side */
@@ -136,16 +139,16 @@ const HTML = String.raw`<!doctype html>
   .main .pp { height:132px; border-radius:50%; background:var(--accent); font-size:54px; }
   .main .pp:active, .main .pp.down { background:#d93a2f; }
   .row { display:grid; gap:10px; margin-top:12px; }
-  .c3 { grid-template-columns:repeat(3,1fr); }
+  .c4 { grid-template-columns:repeat(4,1fr); }
   .row button { font-size:18px; height:44px; }
   .vol { display:grid; grid-template-columns:1fr auto 1fr; align-items:center; margin-top:12px; background:var(--fg); border-radius:18px; }
   .vol button { background:transparent; color:var(--bg); font-size:34px; font-weight:500; height:50px; }
   .vol button:active, .vol button.down { background:#d4d2cc; }
   .vol .mute { color:#5a5e68; font-size:13px; font-weight:700; padding:0 14px; letter-spacing:.04em; }
-  .nav { display:grid; grid-template-columns:1fr 216px 1fr; gap:8px; align-items:center; margin-top:14px; }
+  .nav { display:grid; grid-template-columns:1fr 200px 1fr; gap:8px; align-items:center; margin-top:12px; }
   .nav > button { height:76px; }
   .nav > button small { font-size:12px; line-height:1.3; }
-  .pad { width:216px; height:216px; display:grid; grid-template:repeat(3,1fr)/repeat(3,1fr); background:var(--key); border-radius:50%; padding:4px; }
+  .pad { width:200px; height:200px; display:grid; grid-template:repeat(3,1fr)/repeat(3,1fr); background:var(--key); border-radius:50%; padding:4px; }
   .pad button { background:transparent; height:auto; font-size:26px; border-radius:50%; }
   .pad button:active, .pad button.down { background:var(--key2); }
   .pad .ok { background:var(--key2); font-size:18px; }
@@ -160,7 +163,7 @@ const HTML = String.raw`<!doctype html>
   .vid { display:flex; gap:10px; align-items:center; padding:8px 0; }
   .vid img { width:132px; height:74px; border-radius:10px; object-fit:cover; background:var(--key); flex:none; }
   .vid div { flex:1; min-width:0; }
-  .vid b { display:block; font-size:14px; line-height:1.25; max-height:3.75em; overflow:hidden; }
+  .vid b { display:block; font-size:14px; line-height:1.25; max-height:2.5em; overflow:hidden; }
   .vid span { display:block; margin-top:3px; font-size:12px; color:var(--muted); font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .vid button { width:40px; height:40px; border-radius:50%; font-size:20px; flex:none; }
   .vid.sent b { color:var(--accent); }
@@ -197,7 +200,8 @@ const HTML = String.raw`<!doctype html>
   <div id="now"><img id="nowimg" alt=""><div><b id="nowtitle">Nothing playing</b><span id="nowtime"></span></div>
     <button data-a="startyt" aria-label="Turn on the TV and open YouTube"><small>START</small></button>
     <button class="pw" data-a="power" aria-label="TV power">⏻</button></div>
-  <div id="bar"><i><u id="fill"></u></i></div>
+  <div id="bar"><i><u id="fill"></u></i><b id="knob"></b></div>
+  <div id="times"><span id="tnow"></span><span id="tleft"></span></div>
 
   <div class="main">
     <button data-a="back10" data-r aria-label="Back 10 seconds">⏪︎<small>10</small></button>
@@ -205,10 +209,11 @@ const HTML = String.raw`<!doctype html>
     <button data-a="fwd10" data-r aria-label="Forward 10 seconds">⏩︎<small>10</small></button>
   </div>
 
-  <div class="row c3">
-    <button data-a="back5m" aria-label="Back 5 minutes">⏪︎<small>&nbsp;5 MIN</small></button>
+  <div class="row c4">
+    <button data-a="back5m" aria-label="Back 5 minutes"><small>−5 MIN</small></button>
     <button data-a="prev" aria-label="Previous video">⏮︎</button>
     <button data-a="next" aria-label="Next video">⏭︎</button>
+    <button data-a="fwd5m" aria-label="Forward 5 minutes"><small>+5 MIN</small></button>
   </div>
 
   <div class="vol">
@@ -446,6 +451,7 @@ const HTML = String.raw`<!doctype html>
     back10: function () { seekTo(nowTime() - 10); },
     fwd10: function () { seekTo(nowTime() + 10); },
     back5m: function () { seekTo(nowTime() - 300); },
+    fwd5m: function () { seekTo(nowTime() + 300); },
     prev: function () { cmd("previous"); },
     next: function () { cmd("next"); },
     skipad: function () {
@@ -464,7 +470,11 @@ const HTML = String.raw`<!doctype html>
   }
 
   function draw() {
-    var t = nowTime();
+    var t = drag !== null ? drag : nowTime();
+    $("tnow").textContent = st.id && st.dur ? clock(t) : "";
+    $("tleft").textContent = st.id && st.dur ? clock(Math.max(0, st.dur - t)) + " left" : "";
+    $("knob").style.display = st.dur ? "block" : "none";
+    $("knob").style.left = (st.dur ? Math.min(100, t / st.dur * 100) : 0) + "%";
     $("nowtitle").textContent = st.id ? (st.title || "Playing on TV") : "Nothing playing";
     $("nowtime").textContent = st.id ? clock(t) + (st.dur ? " / " + clock(st.dur) : "") + (st.ad ? (st.canSkip ? " · Ad, can skip" : st.wantSkip ? " · Ad, skipping when allowed" : " · Ad, can't skip yet") : "") : "";
     var img = $("nowimg"), src = st.id ? "https://i.ytimg.com/vi/" + st.id + "/mqdefault.jpg" : "";
@@ -475,10 +485,14 @@ const HTML = String.raw`<!doctype html>
   }
   setInterval(draw, 1000);
 
-  $("bar").addEventListener("click", function (e) {
-    if (!st.dur) return;
-    var r = this.getBoundingClientRect(); seekTo((e.clientX - r.left) / r.width * st.dur);
-  });
+  // Drag anywhere along the bar; the video jumps when you let go.
+  var drag = null;
+  function barTime(x) { var r = $("bar").getBoundingClientRect(); return Math.max(0, Math.min(1, (x - r.left) / r.width)) * st.dur; }
+  $("bar").addEventListener("touchstart", function (e) { if (!st.dur) return; e.preventDefault(); drag = barTime(e.touches[0].clientX); this.classList.add("drag"); draw(); }, { passive: false });
+  $("bar").addEventListener("touchmove", function (e) { if (drag === null) return; e.preventDefault(); drag = barTime(e.touches[0].clientX); draw(); }, { passive: false });
+  $("bar").addEventListener("touchend", function () { this.classList.remove("drag"); if (drag === null) return; var t = drag; drag = null; seekTo(t); });
+  $("bar").addEventListener("touchcancel", function () { this.classList.remove("drag"); drag = null; draw(); });
+  $("bar").addEventListener("click", function (e) { if (st.dur && e.detail) seekTo(barTime(e.clientX)); });
 
   var holdT, repT;
   function stop(b) { clearTimeout(holdT); clearInterval(repT); if (b) b.classList.remove("down"); }
@@ -506,21 +520,27 @@ const HTML = String.raw`<!doctype html>
   // Walk whatever YouTube sent and pull out anything that looks like a video.
   function findVideos(data) {
     var out = [], seen = {};
-    function add(id, title, by, len) {
+    function add(id, title, by, len, when) {
       if (typeof id !== "string" || id.length !== 11 || !title || seen[id]) return;
-      seen[id] = 1; out.push({ id: id, title: title, by: by, len: len });
+      seen[id] = 1; out.push({ id: id, title: title, by: by, len: len, when: when });
     }
     (function walk(o) {
       if (!o || typeof o !== "object") return;
       if (Array.isArray(o)) { o.forEach(walk); return; }
       if (typeof o.videoId === "string" && (o.headline || o.title)) {
-        add(o.videoId, txt(o.headline || o.title), txt(o.shortBylineText || o.ownerText || o.longBylineText), txt(o.lengthText));
+        add(o.videoId, txt(o.headline || o.title), txt(o.shortBylineText || o.ownerText || o.longBylineText), txt(o.lengthText), txt(o.publishedTimeText));
         return;
       }
       if (typeof o.contentId === "string" && /VIDEO$/.test(o.contentType || "") && o.metadata) {
-        var m = o.metadata.lockupMetadataViewModel || {}, by = "";
-        try { by = txt(m.metadata.contentMetadataViewModel.metadataRows[0].metadataParts[0].text); } catch (e) {}
-        add(o.contentId, txt(m.title), by, "");
+        var m = o.metadata.lockupMetadataViewModel || {}, by = "", when = "";
+        try {
+          var rows = m.metadata.contentMetadataViewModel.metadataRows;
+          by = txt(rows[0].metadataParts[0].text);
+          rows.forEach(function (row) { (row.metadataParts || []).forEach(function (part) {
+            var t = txt(part.text); if (/ago|streamed|premiered/i.test(t)) when = t;
+          }); });
+        } catch (e) {}
+        add(o.contentId, txt(m.title), by, "", when);
         return;
       }
       for (var k in o) walk(o[k]);
@@ -583,7 +603,8 @@ const HTML = String.raw`<!doctype html>
       var img = document.createElement("img"); img.loading = "lazy"; img.alt = ""; img.src = "https://i.ytimg.com/vi/" + v.id + "/mqdefault.jpg";
       var d = document.createElement("div"), b = document.createElement("b"), s = document.createElement("span");
       b.textContent = v.title; s.textContent = [v.by, v.len].filter(Boolean).join(" · ");
-      d.appendChild(b); d.appendChild(s);
+      var w = document.createElement("span"); w.textContent = v.when || "";
+      d.appendChild(b); d.appendChild(s); if (v.when) d.appendChild(w);
       var add = document.createElement("button"); add.textContent = "+"; add.setAttribute("aria-label", "Add to queue");
       add.addEventListener("click", function (e) { e.stopPropagation(); cmd("addVideo", { videoId: v.id }); toast("Added to the queue"); });
       row.appendChild(img); row.appendChild(d); row.appendChild(add);
