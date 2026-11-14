@@ -276,7 +276,7 @@ const HTML = String.raw`<!doctype html>
 
   var API = "/api/lounge";
   var token = "", SID = "", GS = "", rid = 1, ofs = 0, aid = 0, linked = false, listenCtl = null, screenOn = true;
-  var st = { time: 0, dur: 0, state: 0, at: Date.now(), vol: null, id: "", title: "", ad: false };
+  var st = { time: 0, dur: 0, state: 0, at: Date.now(), vol: null, id: "", title: "", ad: false, canSkip: false, wantSkip: false };
   var titles = {};
 
   function form(o) { return Object.keys(o).map(function (k) { return encodeURIComponent(k) + "=" + encodeURIComponent(o[k]); }).join("&"); }
@@ -326,8 +326,14 @@ const HTML = String.raw`<!doctype html>
       if (arg.state !== undefined) st.state = parseInt(arg.state, 10);
       draw();
     } else if (name === "onVolumeChanged") { st.vol = parseInt(arg.volume, 10); draw(); }
-    else if (name === "onAdStateChange") { st.ad = arg.adState !== undefined && String(arg.adState) !== "-1"; draw(); }
-    else if (name === "adPlaying") { st.ad = true; draw(); }
+    else if (name === "onAdStateChange" || name === "adPlaying") {
+      // adState "0" means the advert has finished. isSkipEnabled turns "true" once YouTube allows skipping.
+      st.ad = name === "adPlaying" || String(arg.adState) !== "0";
+      st.canSkip = st.ad && String(arg.isSkipEnabled) === "true";
+      if (!st.ad) st.wantSkip = false;
+      if (st.canSkip && st.wantSkip) { st.wantSkip = false; cmd("skipAd"); }
+      draw();
+    }
     else if (name === "loungeStatus") {
       // Tells us whether the YouTube app on the TV is actually up right now.
       try { screenOn = JSON.parse(arg.devices).some(function (d) { return d.type === "LOUNGE_SCREEN"; }); } catch (e) {}
@@ -342,7 +348,7 @@ const HTML = String.raw`<!doctype html>
     rid = 1; ofs = 0; aid = 0; SID = ""; GS = "";
     var q = form({ RID: rid++, VER: 8, CVER: 1, auth_failure_option: "send_error" });
     var body = { app: "web", "mdx-version": "3", name: "iPhone remote", id: CFG.deviceId, device: "REMOTE_CONTROL",
-                 capabilities: "que,dsdtr,atp", method: "setPlaylist", magnaKey: "cloudPairedDevice", ui: "false", theme: "cl", loungeIdToken: token };
+                 capabilities: "que,dsdtr,atp,vsp", method: "setPlaylist", magnaKey: "cloudPairedDevice", ui: "false", theme: "cl", loungeIdToken: token };
     var r = await post(API + "/bc/bind?" + q, body, { "X-YouTube-LoungeId-Token": token });
     if (r.status === 401) { token = ""; await refreshToken(); body.loungeIdToken = token; r = await post(API + "/bc/bind?" + q, body, { "X-YouTube-LoungeId-Token": token }); }
     if (!r.ok) throw new Error("bind " + r.status);
@@ -442,7 +448,10 @@ const HTML = String.raw`<!doctype html>
     back5m: function () { seekTo(nowTime() - 300); },
     prev: function () { cmd("previous"); },
     next: function () { cmd("next"); },
-    skipad: function () { cmd("skipAd"); },
+    skipad: function () {
+      if (st.ad && !st.canSkip) { st.wantSkip = true; toast("Will skip as soon as YouTube allows it"); draw(); }
+      cmd("skipAd");
+    },
     volup: function () { tv("VOLUP"); },
     voldown: function () { tv("VOLDOWN"); },
     mute: function () { tv("MUTE"); },
@@ -457,7 +466,7 @@ const HTML = String.raw`<!doctype html>
   function draw() {
     var t = nowTime();
     $("nowtitle").textContent = st.id ? (st.title || "Playing on TV") : "Nothing playing";
-    $("nowtime").textContent = st.id ? clock(t) + (st.dur ? " / " + clock(st.dur) : "") + (st.ad ? " · Ad" : "") : "";
+    $("nowtime").textContent = st.id ? clock(t) + (st.dur ? " / " + clock(st.dur) : "") + (st.ad ? (st.canSkip ? " · Ad, can skip" : st.wantSkip ? " · Ad, skipping when allowed" : " · Ad, can't skip yet") : "") : "";
     var img = $("nowimg"), src = st.id ? "https://i.ytimg.com/vi/" + st.id + "/mqdefault.jpg" : "";
     if (img.getAttribute("src") !== src) { if (src) img.src = src; else img.removeAttribute("src"); }
     $("fill").style.width = (st.dur ? Math.min(100, t / st.dur * 100) : 0) + "%";
