@@ -1,0 +1,507 @@
+// YouTube Remote for Scriptable (iPhone) — controls the YouTube app on a Fire TV Stick (or any TV).
+// Run it in the Scriptable app. YouTube must be open on the TV.
+// First run: on the TV open YouTube > Settings > "Link with TV code", then type that code here.
+// Optional: sign in to YouTube (gear button) to see your own suggestions and subscriptions.
+// Tap any video in For you / Subs / Search to play it on the TV.
+
+const fm = FileManager.local();
+const CFG_PATH = fm.joinPath(fm.documentsDirectory(), "youtube-remote-config.json");
+const readCfg = () => { try { return fm.fileExists(CFG_PATH) ? JSON.parse(fm.readString(CFG_PATH)) : {}; } catch (e) { return {}; } };
+
+// The page is loaded as if it came from YouTube, so it can talk to YouTube directly.
+const ORIGIN = "https://m.youtube.com/";
+
+const HTML = String.raw`<!doctype html>
+<html><head><meta charset="utf-8">
+<title>YT Remote</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<style>
+  :root { --bg:#0f0f0f; --key:#222326; --key2:#33353a; --fg:#f2f1ee; --muted:#9a9ea8; --accent:#ff3d33; }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; -webkit-touch-callout:none; user-select:none; -webkit-user-select:none; }
+  html,body { margin:0; background:var(--bg); color:var(--fg); font:600 17px -apple-system,system-ui,sans-serif; }
+  body { padding:max(60px, calc(env(safe-area-inset-top) + 10px)) 16px calc(8px + env(safe-area-inset-bottom)); max-width:440px; margin:0 auto; }
+  button { font:inherit; color:var(--fg); background:var(--key); border:0; border-radius:16px; height:56px; padding:0;
+           display:flex; align-items:center; justify-content:center; touch-action:manipulation; }
+  button:active, button.down { background:var(--key2); transform:scale(.96); }
+  button small { font-size:13px; color:var(--muted); font-weight:600; letter-spacing:.04em; }
+
+  nav { display:flex; gap:6px; align-items:center; }
+  nav button { flex:1; height:40px; border-radius:20px; font-size:14px; color:var(--muted); background:transparent; }
+  nav button.on { background:var(--fg); color:var(--bg); }
+  nav .gear { flex:none; width:40px; background:var(--key); color:var(--fg); }
+  #status { margin:8px 2px 0; font-size:12px; font-weight:500; color:var(--muted); min-height:16px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  #status.bad { color:#ff8a82; }
+
+  .view { display:none; } .view.on { display:block; }
+
+  /* Now playing */
+  #now { display:flex; gap:10px; align-items:center; margin-top:10px; background:var(--key); border-radius:16px; padding:8px; min-height:66px; }
+  #now img { width:88px; height:50px; border-radius:8px; object-fit:cover; background:#000; flex:none; }
+  #now div { min-width:0; flex:1; }
+  #now b { display:block; font-size:14px; line-height:1.25; max-height:2.5em; overflow:hidden; }
+  #now span { font-size:12px; color:var(--muted); font-weight:500; }
+  #bar { margin-top:12px; height:28px; display:flex; align-items:center; }
+  #bar i { display:block; flex:1; height:6px; border-radius:3px; background:var(--key2); position:relative; overflow:hidden; pointer-events:none; }
+  #bar i u { position:absolute; left:0; top:0; bottom:0; width:0; background:var(--accent); }
+
+  /* The main controls: play/pause biggest, skip either side */
+  .main { display:grid; grid-template-columns:1fr 132px 1fr; gap:12px; align-items:center; margin-top:8px; }
+  .main button { height:96px; border-radius:24px; flex-direction:column; gap:2px; font-size:30px; }
+  .main button small { font-size:14px; }
+  .main .pp { height:132px; border-radius:50%; background:var(--accent); font-size:54px; }
+  .main .pp:active, .main .pp.down { background:#d93a2f; }
+  .row { display:grid; gap:10px; margin-top:12px; }
+  .c3 { grid-template-columns:repeat(3,1fr); }
+  .row button { font-size:22px; }
+  .vol { display:grid; grid-template-columns:1fr auto 1fr; align-items:center; margin-top:12px; background:var(--fg); border-radius:18px; }
+  .vol button { background:transparent; color:var(--bg); font-size:44px; font-weight:500; height:72px; }
+  .vol button:active, .vol button.down { background:#d4d2cc; }
+  .vol label { color:#5a5e68; font-size:14px; font-weight:700; padding:0 6px; min-width:74px; text-align:center; }
+  .nav { display:grid; grid-template-columns:1fr 150px 1fr; gap:10px; align-items:center; margin-top:12px; }
+  .pad { width:150px; height:150px; display:grid; grid-template:repeat(3,1fr)/repeat(3,1fr); background:var(--key); border-radius:50%; padding:4px; }
+  .pad button { background:transparent; height:auto; font-size:18px; border-radius:50%; }
+  .pad button:active, .pad button.down { background:var(--key2); }
+  .pad .ok { background:var(--key2); font-size:14px; }
+
+  /* Video lists */
+  .search { display:flex; gap:8px; margin-top:10px; }
+  input { flex:1; min-width:0; height:44px; border-radius:12px; border:0; background:var(--key); color:var(--fg); font:inherit; font-weight:500; padding:0 12px;
+          user-select:text; -webkit-user-select:text; }
+  .search button, .set button { height:44px; padding:0 16px; font-size:15px; background:var(--accent); border-radius:12px; flex:none; }
+  .list { margin-top:10px; padding-bottom:84px; }
+  .msg { color:var(--muted); font-size:14px; font-weight:500; padding:24px 6px; text-align:center; line-height:1.4; }
+  .vid { display:flex; gap:10px; align-items:center; padding:8px 0; }
+  .vid img { width:132px; height:74px; border-radius:10px; object-fit:cover; background:var(--key); flex:none; }
+  .vid div { flex:1; min-width:0; }
+  .vid b { display:block; font-size:14px; line-height:1.25; max-height:3.75em; overflow:hidden; }
+  .vid span { display:block; margin-top:3px; font-size:12px; color:var(--muted); font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .vid button { width:40px; height:40px; border-radius:50%; font-size:20px; flex:none; }
+  .vid.sent b { color:var(--accent); }
+
+  /* Small controls that stay on screen while browsing */
+  #mini { position:fixed; left:0; right:0; bottom:0; padding:8px 16px calc(8px + env(safe-area-inset-bottom)); background:rgba(15,15,15,.94);
+          display:none; grid-template-columns:1fr 1.4fr 1fr; gap:10px; max-width:440px; margin:0 auto; }
+  #mini.on { display:grid; }
+  #mini button { height:52px; font-size:20px; }
+  #mini .pp { background:var(--accent); font-size:26px; }
+
+  .set { background:var(--key); border-radius:16px; padding:12px; margin-top:10px; }
+  .set p { margin:0 0 8px; font-size:13px; color:var(--muted); font-weight:500; line-height:1.35; }
+  .set div { display:flex; gap:8px; }
+  .set input { background:var(--bg); }
+  .set .wide { width:100%; background:var(--key2); }
+
+  #toast { position:fixed; left:50%; bottom:calc(84px + env(safe-area-inset-bottom)); transform:translateX(-50%); background:#3a1512; color:#ffb4ad;
+           padding:10px 16px; border-radius:12px; font-size:13px; opacity:0; transition:opacity .2s; pointer-events:none; max-width:90%; text-align:center; }
+  #toast.show { opacity:1; }
+</style></head><body>
+
+<nav>
+  <button data-tab="remote" class="on">Remote</button>
+  <button data-tab="home">For you</button>
+  <button data-tab="subs">Subs</button>
+  <button data-tab="search">Search</button>
+  <button data-tab="set" class="gear" aria-label="Settings">⚙︎</button>
+</nav>
+<div id="status"></div>
+
+<div class="view on" id="v-remote">
+  <div id="now"><img id="nowimg" alt=""><div><b id="nowtitle">Nothing playing</b><span id="nowtime"></span></div></div>
+  <div id="bar"><i><u id="fill"></u></i></div>
+
+  <div class="main">
+    <button data-a="back10" data-r aria-label="Back 10 seconds">⏪︎<small>10</small></button>
+    <button class="pp" data-a="pp" aria-label="Play or pause">⏯︎</button>
+    <button data-a="fwd10" data-r aria-label="Forward 10 seconds">⏩︎<small>10</small></button>
+  </div>
+
+  <div class="row c3">
+    <button data-a="prev" aria-label="Previous video">⏮︎</button>
+    <button data-a="skipad"><small>SKIP AD</small></button>
+    <button data-a="next" aria-label="Next video">⏭︎</button>
+  </div>
+
+  <div class="vol">
+    <button data-a="voldown" data-r aria-label="Volume down">−</button>
+    <label id="vollabel">VOL</label>
+    <button data-a="volup" data-r aria-label="Volume up">+</button>
+  </div>
+
+  <div class="nav">
+    <button data-a="dBACK"><small>BACK</small></button>
+    <div class="pad">
+      <span></span><button data-a="dUP" data-r aria-label="Up">▲</button><span></span>
+      <button data-a="dLEFT" data-r aria-label="Left">◀</button><button class="ok" data-a="dENTER">OK</button><button data-a="dRIGHT" data-r aria-label="Right">▶</button>
+      <span></span><button data-a="dDOWN" data-r aria-label="Down">▼</button><span></span>
+    </div>
+    <span></span>
+  </div>
+</div>
+
+<div class="view" id="v-home"><div class="list" id="l-home"></div></div>
+<div class="view" id="v-subs"><div class="list" id="l-subs"></div></div>
+<div class="view" id="v-search">
+  <div class="search"><input id="q" placeholder="Search YouTube" autocomplete="off" enterkeyhint="search"><button id="go">Search</button></div>
+  <div class="list" id="l-search"></div>
+</div>
+
+<div class="view" id="v-set">
+  <div class="set">
+    <p id="linkmsg">On the TV: open YouTube, go to Settings, then "Link with TV code". Type the code here.</p>
+    <div><input id="code" inputmode="numeric" placeholder="TV code" autocomplete="off"><button id="link">Link</button></div>
+  </div>
+  <div class="set">
+    <p id="signmsg">Sign in to YouTube to see your own suggestions and subscriptions. When you have signed in, tap Close (top left) and the remote reopens.</p>
+    <button class="wide" id="signin">Sign in to YouTube</button>
+  </div>
+</div>
+
+<div id="mini">
+  <button data-a="back10" data-r aria-label="Back 10 seconds">⏪︎</button>
+  <button class="pp" data-a="pp" aria-label="Play or pause">⏯︎</button>
+  <button data-a="fwd10" data-r aria-label="Forward 10 seconds">⏩︎</button>
+</div>
+<div id="toast"></div>
+
+<script>
+  var CFG = __CFG__;
+  try { if (!CFG.screenId) { var saved = JSON.parse(localStorage.getItem("ytRemoteCfg") || "{}"); if (saved.screenId) CFG = saved; } } catch (e) {}
+  if (!CFG.deviceId) CFG.deviceId = "r" + Math.random().toString(36).slice(2) + Date.now().toString(36);
+  function saveCfg() { try { localStorage.setItem("ytRemoteCfg", JSON.stringify(CFG)); } catch (e) {} }
+  saveCfg();
+
+  var $ = function (id) { return document.getElementById(id); };
+  var toastT;
+  function toast(msg) {
+    var t = $("toast"); t.textContent = msg; t.classList.add("show");
+    clearTimeout(toastT); toastT = setTimeout(function () { t.classList.remove("show"); }, 3000);
+  }
+  function status(msg, bad) { var s = $("status"); s.textContent = msg; s.className = bad ? "bad" : ""; }
+
+  /* ===================== TALKING TO THE TV (through YouTube) ===================== */
+
+  var API = "/api/lounge";
+  var token = "", SID = "", GS = "", rid = 1, ofs = 0, aid = 0, linked = false, listenCtl = null;
+  var st = { time: 0, dur: 0, state: 0, at: Date.now(), vol: null, id: "", title: "", ad: false };
+  var titles = {};
+
+  function form(o) { return Object.keys(o).map(function (k) { return encodeURIComponent(k) + "=" + encodeURIComponent(o[k]); }).join("&"); }
+  function post(url, data, headers) {
+    var h = { "Content-Type": "application/x-www-form-urlencoded" };
+    for (var k in headers || {}) h[k] = headers[k];
+    return fetch(url, { method: "POST", headers: h, body: form(data) });
+  }
+
+  async function pair(code) {
+    var r = await post(API + "/pairing/get_screen", { pairing_code: code });
+    if (!r.ok) throw new Error("code");
+    var j = await r.json();
+    CFG.screenId = j.screen.screenId; CFG.screenName = j.screen.name || "TV";
+    token = j.screen.loungeToken; saveCfg();
+  }
+  async function refreshToken() {
+    var r = await post(API + "/pairing/get_lounge_token_batch", { screen_ids: CFG.screenId });
+    if (!r.ok) throw new Error("token");
+    var j = await r.json();
+    token = j.screens[0].loungeToken;
+  }
+
+  // YouTube replies in pieces: a length, a newline, then that many bytes of JSON.
+  function makeParser(onEvent) {
+    var buf = new Uint8Array(0), dec = new TextDecoder();
+    return function (bytes) {
+      var n = new Uint8Array(buf.length + bytes.length); n.set(buf); n.set(bytes, buf.length); buf = n;
+      for (;;) {
+        var nl = buf.indexOf(10); if (nl < 0) return;
+        var len = parseInt(dec.decode(buf.subarray(0, nl)), 10);
+        if (isNaN(len)) { buf = buf.subarray(nl + 1); continue; }
+        if (buf.length < nl + 1 + len) return;
+        var chunk = dec.decode(buf.subarray(nl + 1, nl + 1 + len)); buf = buf.subarray(nl + 1 + len);
+        try { JSON.parse(chunk).forEach(function (e) { aid = e[0]; onEvent(e[1][0], e[1][1], e[1]); }); } catch (e) {}
+      }
+    };
+  }
+
+  function onEvent(name, arg, all) {
+    if (name === "c") SID = arg;
+    else if (name === "S") GS = arg;
+    else if (name === "nowPlaying" || name === "onStateChange") {
+      if (arg.videoId !== undefined) { st.id = arg.videoId; st.title = titles[st.id] || ""; }
+      if (arg.currentTime !== undefined) { st.time = parseFloat(arg.currentTime) || 0; st.at = Date.now(); }
+      if (arg.duration !== undefined) st.dur = parseFloat(arg.duration) || 0;
+      if (arg.state !== undefined) st.state = parseInt(arg.state, 10);
+      draw();
+    } else if (name === "onVolumeChanged") { st.vol = parseInt(arg.volume, 10); draw(); }
+    else if (name === "onAdStateChange") { st.ad = arg.adState !== undefined && String(arg.adState) !== "-1"; draw(); }
+    else if (name === "adPlaying") { st.ad = true; draw(); }
+    else if (name === "loungeScreenDisconnected") status("YouTube closed on the TV. Open it again.", true);
+  }
+
+  async function connect() {
+    if (!token) await refreshToken();
+    rid = 1; ofs = 0; aid = 0; SID = ""; GS = "";
+    var q = form({ RID: rid++, VER: 8, CVER: 1, auth_failure_option: "send_error" });
+    var body = { app: "web", "mdx-version": "3", name: "iPhone remote", id: CFG.deviceId, device: "REMOTE_CONTROL",
+                 capabilities: "que,dsdtr,atp", method: "setPlaylist", magnaKey: "cloudPairedDevice", ui: "false", theme: "cl", loungeIdToken: token };
+    var r = await post(API + "/bc/bind?" + q, body, { "X-YouTube-LoungeId-Token": token });
+    if (r.status === 401) { token = ""; await refreshToken(); body.loungeIdToken = token; r = await post(API + "/bc/bind?" + q, body, { "X-YouTube-LoungeId-Token": token }); }
+    if (!r.ok) throw new Error("bind " + r.status);
+    makeParser(onEvent)(new Uint8Array(await r.arrayBuffer()));
+    if (!SID) throw new Error("no session");
+    linked = true;
+    status("Linked to " + (CFG.screenName || "TV"));
+    listen();
+  }
+
+  // Keeps a line open so the TV can tell us what is playing.
+  async function listen() {
+    if (listenCtl) listenCtl.abort();
+    var ctl = listenCtl = new AbortController(), mySID = SID;
+    while (linked && SID === mySID && !ctl.signal.aborted) {
+      try {
+        var r = await fetch(API + "/bc/bind?" + form({ SID: SID, gsessionid: GS, RID: "rpc", VER: 8, CVER: 1, AID: aid, CI: 0, TYPE: "xmlhttp",
+                            auth_failure_option: "send_error" }), { signal: ctl.signal, headers: { "X-YouTube-LoungeId-Token": token } });
+        if (!r.ok) { if (SID === mySID) { linked = false; start(); } return; }
+        var feed = makeParser(onEvent), reader = r.body.getReader();
+        for (;;) { var c = await reader.read(); if (c.done) break; feed(c.value); }
+      } catch (e) {
+        if (ctl.signal.aborted) return;
+        await new Promise(function (ok) { setTimeout(ok, 2000); });
+      }
+    }
+  }
+
+  var chain = Promise.resolve();
+  function cmd(name, args) {
+    chain = chain.then(async function () {
+      if (!CFG.screenId) { toast("Link your TV first (gear button)"); return; }
+      try {
+        if (!linked) await connect();
+        var send = function () {
+          var data = { count: 1, ofs: ofs++, req0__sc: name };
+          for (var k in args || {}) data["req0_" + k] = args[k];
+          return post(API + "/bc/bind?" + form({ SID: SID, gsessionid: GS, RID: rid++, VER: 8, CVER: 1, auth_failure_option: "send_error" }), data,
+                      { "X-YouTube-LoungeId-Token": token });
+        };
+        var r = await send();
+        if (!r.ok) { linked = false; token = ""; await connect(); r = await send(); }
+        if (!r.ok) toast("The TV did not accept that (" + r.status + ")");
+      } catch (e) {
+        linked = false;
+        toast("Can't reach the TV. Is YouTube open on it?");
+      }
+    });
+    return chain;
+  }
+
+  async function start() {
+    if (!CFG.screenId) { status("Not linked yet. Tap the gear to link your TV.", true); return; }
+    status("Connecting…");
+    try { await connect(); }
+    catch (e) { status("Can't reach the TV. Open YouTube on it, or link again (gear).", true); }
+  }
+
+  /* ===================== CONTROLS ===================== */
+
+  function nowTime() { return st.state === 1 ? st.time + (Date.now() - st.at) / 1000 : st.time; }
+  function clock(s) { s = Math.max(0, Math.floor(s)); var h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = s % 60;
+                      return (h ? h + ":" + (m < 10 ? "0" : "") : "") + m + ":" + (x < 10 ? "0" : "") + x; }
+  function seekTo(t) { t = Math.max(0, st.dur ? Math.min(t, st.dur - 1) : t); st.time = t; st.at = Date.now(); draw(); cmd("seekTo", { newTime: Math.floor(t) }); }
+  function setVol(d) { var v = Math.max(0, Math.min(100, (st.vol === null ? 50 : st.vol) + d)); st.vol = v; draw(); cmd("setVolume", { volume: v }); }
+  function playVideo(id) {
+    st.id = id; st.title = titles[id] || ""; st.time = 0; st.dur = 0; st.at = Date.now(); st.state = 3; draw();
+    cmd("setPlaylist", { videoId: id, currentTime: 0, currentIndex: -1, audioOnly: "false", listId: "" });
+  }
+
+  var actions = {
+    pp: function () { if (st.state === 1) { st.time = nowTime(); st.state = 2; cmd("pause"); } else { st.at = Date.now(); st.state = 1; cmd("play"); } draw(); },
+    back10: function () { seekTo(nowTime() - 10); },
+    fwd10: function () { seekTo(nowTime() + 10); },
+    prev: function () { cmd("previous"); },
+    next: function () { cmd("next"); },
+    skipad: function () { cmd("skipAd"); },
+    volup: function () { setVol(5); },
+    voldown: function () { setVol(-5); }
+  };
+  function act(a) {
+    if (actions[a]) actions[a]();
+    else if (a.charAt(0) === "d") cmd("dpadCommand", { key: a.slice(1) });
+  }
+
+  function draw() {
+    var t = nowTime();
+    $("nowtitle").textContent = st.id ? (st.title || "Playing on TV") : "Nothing playing";
+    $("nowtime").textContent = st.id ? clock(t) + (st.dur ? " / " + clock(st.dur) : "") + (st.ad ? " · Ad" : "") : "";
+    var img = $("nowimg"), src = st.id ? "https://i.ytimg.com/vi/" + st.id + "/mqdefault.jpg" : "";
+    if (img.getAttribute("src") !== src) { if (src) img.src = src; else img.removeAttribute("src"); }
+    $("fill").style.width = (st.dur ? Math.min(100, t / st.dur * 100) : 0) + "%";
+    $("vollabel").textContent = st.vol === null ? "VOL" : "VOL " + st.vol;
+    var sym = st.state === 1 ? "⏸︎" : "▶︎";
+    document.querySelectorAll(".pp").forEach(function (b) { b.textContent = sym; });
+  }
+  setInterval(draw, 1000);
+
+  $("bar").addEventListener("click", function (e) {
+    if (!st.dur) return;
+    var r = this.getBoundingClientRect(); seekTo((e.clientX - r.left) / r.width * st.dur);
+  });
+
+  var holdT, repT;
+  function stop(b) { clearTimeout(holdT); clearInterval(repT); if (b) b.classList.remove("down"); }
+  document.querySelectorAll("button[data-a]").forEach(function (b) {
+    var a = b.dataset.a;
+    b.addEventListener("touchstart", function (e) {
+      e.preventDefault(); b.classList.add("down"); act(a);
+      if (b.hasAttribute("data-r")) holdT = setTimeout(function () { repT = setInterval(function () { act(a); }, 300); }, 500);
+    }, { passive: false });
+    b.addEventListener("touchend", function () { stop(b); });
+    b.addEventListener("touchcancel", function () { stop(b); });
+    b.addEventListener("click", function (e) { if (e.detail) act(a); });
+  });
+
+  /* ===================== SUGGESTIONS, SUBSCRIPTIONS, SEARCH ===================== */
+
+  function txt(o) {
+    if (!o) return "";
+    if (typeof o === "string") return o;
+    if (o.simpleText) return o.simpleText;
+    if (o.content) return o.content;
+    if (o.runs) return o.runs.map(function (r) { return r.text; }).join("");
+    return "";
+  }
+  // Walk whatever YouTube sent and pull out anything that looks like a video.
+  function findVideos(data) {
+    var out = [], seen = {};
+    function add(id, title, by, len) {
+      if (typeof id !== "string" || id.length !== 11 || !title || seen[id]) return;
+      seen[id] = 1; out.push({ id: id, title: title, by: by, len: len });
+    }
+    (function walk(o) {
+      if (!o || typeof o !== "object") return;
+      if (Array.isArray(o)) { o.forEach(walk); return; }
+      if (typeof o.videoId === "string" && (o.headline || o.title)) {
+        add(o.videoId, txt(o.headline || o.title), txt(o.shortBylineText || o.ownerText || o.longBylineText), txt(o.lengthText));
+        return;
+      }
+      if (typeof o.contentId === "string" && /VIDEO$/.test(o.contentType || "") && o.metadata) {
+        var m = o.metadata.lockupMetadataViewModel || {}, by = "";
+        try { by = txt(m.metadata.contentMetadataViewModel.metadataRows[0].metadataParts[0].text); } catch (e) {}
+        add(o.contentId, txt(m.title), by, "");
+        return;
+      }
+      for (var k in o) walk(o[k]);
+    })(data);
+    return out;
+  }
+  function pageData(html) {
+    var m = html.match(/var ytInitialData = '((?:[^'\\]|\\[\s\S])*)'/);
+    if (m) return JSON.parse(m[1].replace(/\\x([0-9a-fA-F]{2})|\\([\s\S])/g, function (all, hex, ch) { return hex ? String.fromCharCode(parseInt(hex, 16)) : ch; }));
+    m = html.match(/ytInitialData\s*=\s*(\{[\s\S]*?\});\s*<\/script>/);
+    if (m) return JSON.parse(m[1]);
+    throw new Error("no data");
+  }
+
+  var loaded = {};
+  async function loadList(key, path, needsSignIn) {
+    var box = $("l-" + key);
+    box.innerHTML = '<div class="msg">Loading…</div>';
+    try {
+      var r = await fetch(path, { credentials: "include" });
+      var html = await r.text();
+      var signedIn = /"LOGGED_IN":\s*true/.test(html);
+      var vids = findVideos(pageData(html));
+      if (!vids.length) {
+        box.innerHTML = '<div class="msg"></div>';
+        box.firstChild.textContent = needsSignIn && !signedIn ? "Sign in to YouTube (gear button) to see this." : "Nothing to show here right now.";
+        return;
+      }
+      box.innerHTML = "";
+      vids.forEach(function (v) {
+        titles[v.id] = v.title;
+        var row = document.createElement("div"); row.className = "vid";
+        var img = document.createElement("img"); img.loading = "lazy"; img.alt = ""; img.src = "https://i.ytimg.com/vi/" + v.id + "/mqdefault.jpg";
+        var d = document.createElement("div"), b = document.createElement("b"), s = document.createElement("span");
+        b.textContent = v.title; s.textContent = [v.by, v.len].filter(Boolean).join(" · ");
+        d.appendChild(b); d.appendChild(s);
+        var add = document.createElement("button"); add.textContent = "+"; add.setAttribute("aria-label", "Add to queue");
+        add.addEventListener("click", function (e) { e.stopPropagation(); cmd("addVideo", { videoId: v.id }); toast("Added to the queue"); });
+        row.appendChild(img); row.appendChild(d); row.appendChild(add);
+        row.addEventListener("click", function () { row.classList.add("sent"); playVideo(v.id); toast("Playing on the TV"); });
+        box.appendChild(row);
+      });
+      loaded[key] = Date.now();
+    } catch (e) {
+      box.innerHTML = '<div class="msg">Could not load this. Check your connection and try again.</div>';
+    }
+  }
+  function search() { var q = $("q").value.trim(); if (!q) return; $("q").blur(); loadList("search", "/results?search_query=" + encodeURIComponent(q), false); }
+  $("go").addEventListener("click", search);
+  $("q").addEventListener("keydown", function (e) { if (e.key === "Enter") search(); });
+
+  /* ===================== TABS AND SETTINGS ===================== */
+
+  function show(tab) {
+    document.querySelectorAll("nav button").forEach(function (b) { b.classList.toggle("on", b.dataset.tab === tab); });
+    document.querySelectorAll(".view").forEach(function (v) { v.classList.toggle("on", v.id === "v-" + tab); });
+    $("mini").classList.toggle("on", tab === "home" || tab === "subs" || tab === "search");
+    window.scrollTo(0, 0);
+    var fresh = function (k) { return loaded[k] && Date.now() - loaded[k] < 5 * 60000; };
+    if (tab === "home" && !fresh("home")) loadList("home", "/", true);
+    if (tab === "subs" && !fresh("subs")) loadList("subs", "/feed/subscriptions", true);
+  }
+  document.querySelectorAll("nav button").forEach(function (b) { b.addEventListener("click", function () { show(b.dataset.tab); }); });
+
+  $("link").addEventListener("click", async function () {
+    var code = $("code").value.replace(/\D/g, "");
+    if (code.length < 6) { $("linkmsg").textContent = "That code looks too short. It is the 12-digit code shown on the TV."; return; }
+    $("linkmsg").textContent = "Linking…";
+    try {
+      await pair(code); linked = false; await connect();
+      $("linkmsg").textContent = "Linked to " + CFG.screenName + ". You only need to do this once.";
+      $("code").value = ""; show("remote");
+    } catch (e) {
+      $("linkmsg").textContent = "That code was not accepted. Get a fresh code on the TV (YouTube > Settings > Link with TV code) and try again.";
+    }
+  });
+  $("signin").addEventListener("click", function () {
+    location.href = "https://accounts.google.com/ServiceLogin?service=youtube&continue=" + encodeURIComponent("https://m.youtube.com/");
+  });
+  if (CFG.screenId) $("linkmsg").textContent = "Linked to " + (CFG.screenName || "TV") + ". To link a different TV: on it open YouTube > Settings > Link with TV code, and type the code here.";
+
+  draw();
+  start();
+</script>
+</body></html>`;
+
+if (config.runsInWidget) {
+  // A widget can't show the remote itself, so it shows a tile that opens the remote when tapped.
+  const w = new ListWidget();
+  w.backgroundColor = new Color("#0f0f0f");
+  w.url = "scriptable:///run/" + encodeURIComponent(Script.name());
+  w.addSpacer();
+  const icon = w.addImage(SFSymbol.named("play.rectangle.fill").image);
+  icon.imageSize = new Size(44, 44);
+  icon.tintColor = new Color("#ff3d33");
+  w.addSpacer(8);
+  const title = w.addText("YouTube Remote");
+  title.font = Font.boldSystemFont(16);
+  title.textColor = new Color("#f2f1ee");
+  w.addSpacer();
+  Script.setWidget(w);
+} else {
+  for (;;) {
+    const cfg = readCfg();
+    const wv = new WebView();
+    await wv.loadHTML(HTML.replace("__CFG__", () => JSON.stringify(cfg)), ORIGIN);
+    await wv.present(true);
+
+    // After Close: keep the TV link for next time. If the page had gone off to the sign-in screen, reopen the remote.
+    let out = "";
+    try { out = await wv.evaluateJavaScript("document.title === 'YT Remote' ? JSON.stringify(CFG) : 'away'"); } catch (e) {}
+    if (out === "away") continue;
+    try { const next = JSON.parse(out); if (next && typeof next === "object") fm.writeString(CFG_PATH, JSON.stringify(next)); } catch (e) {}
+    break;
+  }
+}
+
+Script.complete();
