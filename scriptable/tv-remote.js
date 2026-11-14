@@ -3,6 +3,7 @@
 // It's set to the TV at 192.168.1.222. Tap the gear to change the address.
 // iOS will ask once to let Scriptable find devices on your local network: say Allow.
 // Hold volume, channel or the arrows to repeat.
+// As a Home Screen widget it shows a tile; tap it to open the remote.
 
 const DEFAULT_IP = "192.168.1.222";
 const PORT = 55000;
@@ -178,17 +179,37 @@ const HTML = /*html*/ `<!doctype html>
 </script>
 </body></html>`;
 
-for (;;) {
-  const wv = new WebView();
-  await wv.loadHTML(HTML.split("__IP__").join(cfg.ip), "http://" + cfg.ip + ":" + PORT + "/");
-  await wv.present(true);
+if (config.runsInWidget) {
+  // A widget can't show the remote itself, so it shows a tile that opens the remote when tapped.
+  const w = new ListWidget();
+  w.backgroundColor = new Color("#111317");
+  w.url = "scriptable:///run/" + encodeURIComponent(Script.name());
+  w.addSpacer();
+  const icon = w.addImage(SFSymbol.named("tv").image);
+  icon.imageSize = new Size(44, 44);
+  icon.tintColor = new Color("#ff4a3d");
+  w.addSpacer(8);
+  const title = w.addText("TV Remote");
+  title.font = Font.boldSystemFont(17);
+  title.textColor = new Color("#f2f1ee");
+  const sub = w.addText("Tap to open");
+  sub.font = Font.systemFont(12);
+  sub.textColor = new Color("#9a9ea8");
+  w.addSpacer();
+  Script.setWidget(w);
+} else {
+  for (;;) {
+    const wv = new WebView();
+    await wv.loadHTML(HTML.split("__IP__").join(cfg.ip), "http://" + cfg.ip + ":" + PORT + "/");
+    await wv.present(true);
 
-  // After Close: did the address get changed? If so save it and reopen.
-  let next = "";
-  try { next = await wv.evaluateJavaScript("window.newIP || ''"); } catch (e) {}
-  if (!validIP(next || "") || next === cfg.ip) break;
-  cfg.ip = next;
-  fm.writeString(CFG, JSON.stringify(cfg));
+    // After Close: did the address get changed? If so save it and reopen.
+    let next = "";
+    try { next = await wv.evaluateJavaScript("window.newIP || ''"); } catch (e) {}
+    if (!validIP(next || "") || next === cfg.ip) break;
+    cfg.ip = next;
+    fm.writeString(CFG, JSON.stringify(cfg));
+  }
 }
 
 Script.complete();
