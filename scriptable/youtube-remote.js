@@ -125,6 +125,7 @@ const HTML = String.raw`<!doctype html>
   .vid span { display:block; margin-top:3px; font-size:12px; color:var(--muted); font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .vid button { width:40px; height:40px; border-radius:50%; font-size:20px; flex:none; }
   .vid.sent b { color:var(--accent); }
+  .morebtn { width:100%; height:48px; margin-top:8px; font-size:15px; color:var(--muted); }
 
   /* Small controls that stay on screen while browsing */
   #mini { position:fixed; left:0; right:0; bottom:0; padding:8px 16px calc(8px + env(safe-area-inset-bottom)); background:rgba(15,15,15,.94);
@@ -450,7 +451,79 @@ const HTML = String.raw`<!doctype html>
     throw new Error("no data");
   }
 
-  var loaded = {};
+  // The "load more" marker YouTube leaves at the end of a list.
+  function findMore(data) {
+    var found = null;
+    (function walk(o) {
+      if (!o || typeof o !== "object") return;
+      if (Array.isArray(o)) { o.forEach(walk); return; }
+      if (o.continuationCommand && o.continuationCommand.token) found = o.continuationCommand;
+      for (var k in o) walk(o[k]);
+    })(data);
+    return found;
+  }
+  function setting(html, key) { var m = html.match(new RegExp('"' + key + '":"([^"]+)"')); return m ? m[1] : ""; }
+  // Proves to YouTube that the request comes from your signed-in session, the same way its own pages do.
+  async function signedHeader() {
+    try {
+      var m = document.cookie.match(/(?:^|; )SAPISID=([^;]+)/) || document.cookie.match(/(?:^|; )__Secure-3PAPISID=([^;]+)/);
+      if (!m || !window.crypto || !crypto.subtle) return "";
+      var ts = Math.floor(Date.now() / 1000), origin = "https://m.youtube.com";
+      var hash = await crypto.subtle.digest("SHA-1", new TextEncoder().encode(ts + " " + m[1] + " " + origin));
+      var hex = Array.prototype.map.call(new Uint8Array(hash), function (b) { return (b < 16 ? "0" : "") + b.toString(16); }).join("");
+      return "SAPISIDHASH " + ts + "_" + hex;
+    } catch (e) { return ""; }
+  }
+  async function fetchMore(L) {
+    var headers = { "Content-Type": "application/json", "X-Youtube-Client-Name": "2", "X-Youtube-Client-Version": L.ver };
+    if (L.visitor) headers["X-Goog-Visitor-Id"] = L.visitor;
+    var auth = await signedHeader();
+    if (auth) { headers["Authorization"] = auth; headers["X-Origin"] = "https://m.youtube.com"; headers["X-Goog-AuthUser"] = "0"; }
+    var kind = /SEARCH/.test(L.more.request || "") ? "search" : "browse";
+    var r = await fetch("/youtubei/v1/" + kind + "?prettyPrint=false", { method: "POST", credentials: "include", headers: headers,
+      body: JSON.stringify({ context: { client: { clientName: "MWEB", clientVersion: L.ver, hl: L.hl || "en", gl: L.gl || "US", visitorData: L.visitor } },
+                             continuation: L.more.token }) });
+    if (!r.ok) throw new Error("more " + r.status);
+    return r.json();
+  }
+
+  var MIN_ITEMS = 20;
+  var loaded = {}, lists = {};
+  function addVideos(L, vids) {
+    var added = 0;
+    vids.forEach(function (v) {
+      if (L.seen[v.id]) return;
+      L.seen[v.id] = 1; added++; L.count++;
+      titles[v.id] = v.title;
+      var row = document.createElement("div"); row.className = "vid";
+      var img = document.createElement("img"); img.loading = "lazy"; img.alt = ""; img.src = "https://i.ytimg.com/vi/" + v.id + "/mqdefault.jpg";
+      var d = document.createElement("div"), b = document.createElement("b"), s = document.createElement("span");
+      b.textContent = v.title; s.textContent = [v.by, v.len].filter(Boolean).join(" · ");
+      d.appendChild(b); d.appendChild(s);
+      var add = document.createElement("button"); add.textContent = "+"; add.setAttribute("aria-label", "Add to queue");
+      add.addEventListener("click", function (e) { e.stopPropagation(); cmd("addVideo", { videoId: v.id }); toast("Added to the queue"); });
+      row.appendChild(img); row.appendChild(d); row.appendChild(add);
+      row.addEventListener("click", function () { row.classList.add("sent"); playVideo(v.id); toast("Playing on the TV"); });
+      L.box.insertBefore(row, L.foot);
+    });
+    return added;
+  }
+  // Keep asking YouTube for the next batch until the list has enough in it.
+  async function fill(L, target) {
+    if (L.busy) return;
+    L.busy = true; L.foot.textContent = "Loading more…"; L.foot.style.display = "";
+    try {
+      for (var tries = 0; L.more && L.count < target && tries < 6; tries++) {
+        var data = await fetchMore(L);
+        var before = L.more.token;
+        L.more = findMore(data);
+        addVideos(L, findVideos(data));
+        if (L.more && L.more.token === before) L.more = null;
+      }
+    } catch (e) { L.more = null; }
+    L.busy = false;
+    if (L.more) { L.foot.textContent = "Show more"; L.foot.style.display = ""; } else L.foot.style.display = "none";
+  }
   async function loadList(key, path, needsSignIn) {
     var box = $("l-" + key);
     box.innerHTML = '<div class="msg">Loading…</div>';
@@ -458,26 +531,20 @@ const HTML = String.raw`<!doctype html>
       var r = await fetch(path, { credentials: "include" });
       var html = await r.text();
       var signedIn = /"LOGGED_IN":\s*true/.test(html);
-      var vids = findVideos(pageData(html));
-      if (!vids.length) {
+      var data = pageData(html);
+      var foot = document.createElement("button"); foot.className = "morebtn"; foot.style.display = "none";
+      var L = lists[key] = { box: box, foot: foot, seen: {}, count: 0, busy: false, more: findMore(data),
+                             ver: setting(html, "INNERTUBE_CLIENT_VERSION") || setting(html, "INNERTUBE_CONTEXT_CLIENT_VERSION"),
+                             visitor: setting(html, "VISITOR_DATA"), hl: setting(html, "HL"), gl: setting(html, "GL") };
+      box.innerHTML = ""; box.appendChild(foot);
+      foot.addEventListener("click", function () { fill(L, L.count + MIN_ITEMS); });
+      addVideos(L, findVideos(data));
+      if (L.ver) await fill(L, MIN_ITEMS); else L.more = null;
+      if (!L.count) {
         box.innerHTML = '<div class="msg"></div>';
         box.firstChild.textContent = needsSignIn && !signedIn ? "Sign in to YouTube (gear button) to see this." : "Nothing to show here right now.";
         return;
       }
-      box.innerHTML = "";
-      vids.forEach(function (v) {
-        titles[v.id] = v.title;
-        var row = document.createElement("div"); row.className = "vid";
-        var img = document.createElement("img"); img.loading = "lazy"; img.alt = ""; img.src = "https://i.ytimg.com/vi/" + v.id + "/mqdefault.jpg";
-        var d = document.createElement("div"), b = document.createElement("b"), s = document.createElement("span");
-        b.textContent = v.title; s.textContent = [v.by, v.len].filter(Boolean).join(" · ");
-        d.appendChild(b); d.appendChild(s);
-        var add = document.createElement("button"); add.textContent = "+"; add.setAttribute("aria-label", "Add to queue");
-        add.addEventListener("click", function (e) { e.stopPropagation(); cmd("addVideo", { videoId: v.id }); toast("Added to the queue"); });
-        row.appendChild(img); row.appendChild(d); row.appendChild(add);
-        row.addEventListener("click", function () { row.classList.add("sent"); playVideo(v.id); toast("Playing on the TV"); });
-        box.appendChild(row);
-      });
       loaded[key] = Date.now();
     } catch (e) {
       box.innerHTML = '<div class="msg">Could not load this. Check your connection and try again.</div>';
