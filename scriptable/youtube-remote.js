@@ -136,7 +136,7 @@ const HTML = String.raw`<!doctype html>
   .main .pp { height:132px; border-radius:50%; background:var(--accent); font-size:54px; }
   .main .pp:active, .main .pp.down { background:#d93a2f; }
   .row { display:grid; gap:10px; margin-top:12px; }
-  .c2 { grid-template-columns:repeat(2,1fr); }
+  .c3 { grid-template-columns:repeat(3,1fr); }
   .row button { font-size:18px; height:44px; }
   .vol { display:grid; grid-template-columns:1fr auto 1fr; align-items:center; margin-top:12px; background:var(--fg); border-radius:18px; }
   .vol button { background:transparent; color:var(--bg); font-size:34px; font-weight:500; height:50px; }
@@ -205,7 +205,8 @@ const HTML = String.raw`<!doctype html>
     <button data-a="fwd10" data-r aria-label="Forward 10 seconds">⏩︎<small>10</small></button>
   </div>
 
-  <div class="row c2">
+  <div class="row c3">
+    <button data-a="back5m" aria-label="Back 5 minutes">⏪︎<small>&nbsp;5 MIN</small></button>
     <button data-a="prev" aria-label="Previous video">⏮︎</button>
     <button data-a="next" aria-label="Next video">⏭︎</button>
   </div>
@@ -438,6 +439,7 @@ const HTML = String.raw`<!doctype html>
     pp: function () { if (st.state === 1) { st.time = nowTime(); st.state = 2; cmd("pause"); } else { st.at = Date.now(); st.state = 1; cmd("play"); } draw(); },
     back10: function () { seekTo(nowTime() - 10); },
     fwd10: function () { seekTo(nowTime() + 10); },
+    back5m: function () { seekTo(nowTime() - 300); },
     prev: function () { cmd("previous"); },
     next: function () { cmd("next"); },
     skipad: function () { cmd("skipAd"); },
