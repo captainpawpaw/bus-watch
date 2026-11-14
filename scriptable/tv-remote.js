@@ -1,10 +1,11 @@
 // TV Remote for Scriptable (iPhone) — Panasonic Viera (built for the TX-40ES400 series)
 // Run it in the Scriptable app while your phone is on the same Wi-Fi as the TV.
-// First run asks for the TV's address, or finds the TV for you. Tap the gear to change it later.
+// It's set to the TV at 192.168.1.222. Tap the gear to change that, or to find the TV for you.
 // iOS will ask once to let Scriptable find devices on your local network: say Allow.
 // Hold volume, channel or the arrows to repeat.
 
-const DEFAULT_PREFIX = "192.168.222.";
+const DEFAULT_IP = "192.168.1.222";
+const DEFAULT_PREFIX = "192.168.1.";
 const PORT = 55000;
 
 const fm = FileManager.local();
@@ -14,6 +15,7 @@ const writeCfg = (v) => fm.writeString(CFG, JSON.stringify(v));
 const validIP = (s) => /^(\d{1,3})(\.\d{1,3}){3}$/.test(s) && s.split(".").every((n) => Number(n) <= 255);
 
 let cfg = readCfg();
+if (!cfg.ip) cfg.ip = DEFAULT_IP;
 
 /* ===================== TALKING TO THE TV ===================== */
 
@@ -82,7 +84,7 @@ async function setup() {
     const a = new Alert();
     a.title = "TV address";
     a.message = "Type the TV's IP address, or let me look for it on your Wi-Fi.\n(On the TV: Menu > Network > Network Status.)";
-    a.addTextField("192.168.222.x", cfg.ip || DEFAULT_PREFIX);
+    a.addTextField("192.168.1.x", cfg.ip || DEFAULT_PREFIX);
     a.addAction("Save");
     a.addAction("Find it for me");
     a.addCancelAction("Cancel");
@@ -91,7 +93,7 @@ async function setup() {
     const typed = a.textFieldValue(0).trim();
 
     if (pick === 0) {
-      if (!validIP(typed)) { await say("That's not a full address", "It should look like 192.168.222.15"); continue; }
+      if (!validIP(typed)) { await say("That's not a full address", "It should look like 192.168.1.222"); continue; }
       cfg.ip = typed;
       writeCfg(cfg);
       return true;
@@ -133,7 +135,7 @@ const HTML = /*html*/ `<!doctype html>
   .power { background:var(--accent); font-size:22px; }
   .power:active { background:#d93a2f; }
   .row { display:grid; gap:10px; margin-top:10px; }
-  .c3 { grid-template-columns:repeat(3,1fr); } .c4 { grid-template-columns:repeat(4,1fr); } .c5 { grid-template-columns:repeat(5,1fr); }
+  .c4 { grid-template-columns:repeat(4,1fr); } .c5 { grid-template-columns:repeat(5,1fr); }
   .pad { margin:18px auto 8px; width:236px; height:236px; display:grid; grid-template:repeat(3,1fr)/repeat(3,1fr); gap:6px;
          background:var(--key); border-radius:50%; padding:8px; }
   .pad button { background:transparent; height:auto; font-size:24px; border-radius:50%; }
@@ -146,10 +148,6 @@ const HTML = /*html*/ `<!doctype html>
   .rocker button:active, .rocker button.down { background:var(--key2); }
   .rocker label { text-align:center; color:var(--muted); font-size:11px; letter-spacing:.06em; }
   .mid { display:flex; flex-direction:column; gap:10px; justify-content:center; }
-  .colours button { height:30px; border-radius:10px; }
-  .red { background:#c8261d; } .green { background:#2f9a55; } .yellow { background:#d9a81e; } .blue { background:#2a5db0; }
-  .nums button { font-size:19px; }
-  h2 { margin:20px 0 0; font-size:11px; color:var(--muted); letter-spacing:.08em; font-weight:600; }
   #toast { position:fixed; left:50%; bottom:calc(20px + env(safe-area-inset-bottom)); transform:translateX(-50%); background:#3a1512; color:#ffb4ad;
            padding:10px 16px; border-radius:12px; font-size:13px; opacity:0; transition:opacity .2s; pointer-events:none; white-space:nowrap; }
   #toast.show { opacity:1; }
@@ -198,18 +196,6 @@ const HTML = /*html*/ `<!doctype html>
   <button data-k="FF" aria-label="Fast forward">⏩︎</button>
 </div>
 
-<div class="row c4 colours">
-  <button class="red" data-k="RED" aria-label="Red"></button><button class="green" data-k="GREEN" aria-label="Green"></button>
-  <button class="yellow" data-k="YELLOW" aria-label="Yellow"></button><button class="blue" data-k="BLUE" aria-label="Blue"></button>
-</div>
-
-<h2>NUMBERS</h2>
-<div class="row c3 nums">
-  <button data-k="D1">1</button><button data-k="D2">2</button><button data-k="D3">3</button>
-  <button data-k="D4">4</button><button data-k="D5">5</button><button data-k="D6">6</button>
-  <button data-k="D7">7</button><button data-k="D8">8</button><button data-k="D9">9</button>
-  <button data-k="NETFLIX"><small>NETFLIX</small></button><button data-k="D0">0</button><button data-k="TEXT"><small>TEXT</small></button>
-</div>
 <div id="toast"></div>
 
 <script>
