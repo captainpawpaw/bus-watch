@@ -23,33 +23,35 @@ const HTML = /*html*/ `<!doctype html>
 <style>
   :root { --bg:#111317; --key:#23262d; --key2:#2e323b; --fg:#f2f1ee; --muted:#9a9ea8; --accent:#ff4a3d; }
   * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; -webkit-touch-callout:none; user-select:none; -webkit-user-select:none; }
-  html,body { margin:0; background:var(--bg); color:var(--fg); font:600 15px -apple-system,system-ui,sans-serif; }
-  body { padding:14px 16px calc(24px + env(safe-area-inset-bottom)); max-width:440px; margin:0 auto; }
+  html,body { margin:0; background:var(--bg); color:var(--fg); font:600 17px -apple-system,system-ui,sans-serif; }
+  body { padding:max(96px, calc(env(safe-area-inset-top) + 48px)) 16px calc(24px + env(safe-area-inset-bottom)); max-width:440px; margin:0 auto; }
   header { display:flex; align-items:center; gap:10px; margin-bottom:14px; }
   header .name { flex:1; min-width:0; }
-  header .name b { display:block; font-size:17px; }
-  header .name span { color:var(--muted); font-size:12px; font-weight:500; }
-  button { font:inherit; color:var(--fg); background:var(--key); border:0; border-radius:14px; height:52px; padding:0;
+  header .name b { display:block; font-size:19px; }
+  header .name span { color:var(--muted); font-size:13px; font-weight:500; }
+  button { font:inherit; color:var(--fg); background:var(--key); border:0; border-radius:16px; height:66px; padding:0;
            display:flex; align-items:center; justify-content:center; touch-action:manipulation; }
   button:active, button.down { background:var(--key2); transform:scale(.96); }
-  button small { font-size:11px; color:var(--muted); font-weight:600; letter-spacing:.04em; }
-  .round { width:52px; border-radius:50%; flex:none; }
-  .power { background:var(--accent); font-size:22px; }
+  button small { font-size:14px; color:var(--muted); font-weight:600; letter-spacing:.04em; }
+  .round { width:62px; height:62px; border-radius:50%; flex:none; }
+  .power { background:var(--accent); font-size:26px; }
   .power:active { background:#d93a2f; }
-  .row { display:grid; gap:10px; margin-top:10px; }
+  .row { display:grid; gap:10px; margin-top:12px; }
+  .c5 button { font-size:22px; }
   .c4 { grid-template-columns:repeat(4,1fr); } .c5 { grid-template-columns:repeat(5,1fr); }
-  .pad { margin:18px auto 8px; width:236px; height:236px; display:grid; grid-template:repeat(3,1fr)/repeat(3,1fr); gap:6px;
+  .pad { margin:16px auto 6px; width:290px; height:290px; display:grid; grid-template:repeat(3,1fr)/repeat(3,1fr); gap:6px;
          background:var(--key); border-radius:50%; padding:8px; }
-  .pad button { background:transparent; height:auto; font-size:24px; border-radius:50%; }
+  .pad button { background:transparent; height:auto; font-size:32px; border-radius:50%; }
   .pad button:active, .pad button.down { background:var(--key2); }
-  .pad .ok { background:var(--key2); font-size:16px; }
+  .pad .ok { background:var(--key2); font-size:20px; }
   .pad .ok:active { background:#3a3f4a; }
-  .rockers { display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px; margin-top:14px; }
+  .rockers { display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px; margin-top:12px; }
   .rocker { background:var(--key); border-radius:18px; display:flex; flex-direction:column; align-items:stretch; }
-  .rocker button { background:transparent; font-size:24px; height:54px; }
+  .rocker button { background:transparent; font-size:32px; height:72px; }
   .rocker button:active, .rocker button.down { background:var(--key2); }
-  .rocker label { text-align:center; color:var(--muted); font-size:11px; letter-spacing:.06em; }
-  .mid { display:flex; flex-direction:column; gap:10px; justify-content:center; }
+  .rocker label { text-align:center; color:var(--muted); font-size:13px; letter-spacing:.06em; }
+  .mid { display:flex; flex-direction:column; gap:10px; justify-content:space-between; }
+  .mid button { flex:1; height:auto; }
   #toast { position:fixed; left:50%; bottom:calc(20px + env(safe-area-inset-bottom)); transform:translateX(-50%); background:#3a1512; color:#ffb4ad;
            padding:10px 16px; border-radius:12px; font-size:13px; opacity:0; transition:opacity .2s; pointer-events:none; white-space:nowrap; }
   #toast.show { opacity:1; }
@@ -59,7 +61,7 @@ const HTML = /*html*/ `<!doctype html>
   #set div { display:flex; gap:8px; }
   #set input { flex:1; min-width:0; height:44px; border-radius:10px; border:0; background:var(--bg); color:var(--fg); font:inherit; padding:0 12px;
                user-select:text; -webkit-user-select:text; }
-  #set button { height:44px; padding:0 16px; background:var(--accent); }
+  #set button { height:44px; font-size:15px; padding:0 16px; background:var(--accent); }
 </style></head><body>
 <header>
   <button class="round power" data-k="POWER" aria-label="Power">⏻</button>
@@ -93,13 +95,6 @@ const HTML = /*html*/ `<!doctype html>
     <button data-k="TV"><small>TV</small></button>
   </div>
   <div class="rocker"><button data-k="CH_UP" data-r aria-label="Channel up">⌃</button><label>CH</label><button data-k="CH_DOWN" data-r aria-label="Channel down">⌄</button></div>
-</div>
-
-<div class="row c4">
-  <button data-k="APPS"><small>APPS</small></button>
-  <button data-k="EPG"><small>GUIDE</small></button>
-  <button data-k="INFO"><small>INFO</small></button>
-  <button data-k="SUBMENU"><small>OPTION</small></button>
 </div>
 
 <div class="row c5">
