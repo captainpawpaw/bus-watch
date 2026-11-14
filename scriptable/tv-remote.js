@@ -24,12 +24,12 @@ const HTML = /*html*/ `<!doctype html>
   :root { --bg:#111317; --key:#23262d; --key2:#2e323b; --fg:#f2f1ee; --muted:#9a9ea8; --accent:#ff4a3d; }
   * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; -webkit-touch-callout:none; user-select:none; -webkit-user-select:none; }
   html,body { margin:0; background:var(--bg); color:var(--fg); font:600 17px -apple-system,system-ui,sans-serif; }
-  body { padding:max(96px, calc(env(safe-area-inset-top) + 48px)) 16px calc(24px + env(safe-area-inset-bottom)); max-width:440px; margin:0 auto; }
+  body { padding:max(124px, calc(env(safe-area-inset-top) + 76px)) 16px calc(8px + env(safe-area-inset-bottom)); max-width:440px; margin:0 auto; }
   header { display:flex; align-items:center; gap:10px; margin-bottom:14px; }
   header .name { flex:1; min-width:0; }
   header .name b { display:block; font-size:19px; }
   header .name span { color:var(--muted); font-size:13px; font-weight:500; }
-  button { font:inherit; color:var(--fg); background:var(--key); border:0; border-radius:16px; height:66px; padding:0;
+  button { font:inherit; color:var(--fg); background:var(--key); border:0; border-radius:16px; height:60px; padding:0;
            display:flex; align-items:center; justify-content:center; touch-action:manipulation; }
   button:active, button.down { background:var(--key2); transform:scale(.96); }
   button small { font-size:14px; color:var(--muted); font-weight:600; letter-spacing:.04em; }
@@ -39,17 +39,22 @@ const HTML = /*html*/ `<!doctype html>
   .row { display:grid; gap:10px; margin-top:12px; }
   .c5 button { font-size:22px; }
   .c4 { grid-template-columns:repeat(4,1fr); } .c5 { grid-template-columns:repeat(5,1fr); }
-  .pad { margin:16px auto 6px; width:290px; height:290px; display:grid; grid-template:repeat(3,1fr)/repeat(3,1fr); gap:6px;
+  .pad { margin:16px auto 6px; width:240px; height:240px; display:grid; grid-template:repeat(3,1fr)/repeat(3,1fr); gap:6px;
          background:var(--key); border-radius:50%; padding:8px; }
-  .pad button { background:transparent; height:auto; font-size:32px; border-radius:50%; }
+  .pad button { background:transparent; height:auto; font-size:28px; border-radius:50%; }
   .pad button:active, .pad button.down { background:var(--key2); }
   .pad .ok { background:var(--key2); font-size:20px; }
   .pad .ok:active { background:#3a3f4a; }
-  .rockers { display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px; margin-top:12px; }
+  .rockers { display:grid; grid-template-columns:1fr 1.5fr 1fr; gap:10px; margin-top:12px; }
   .rocker { background:var(--key); border-radius:18px; display:flex; flex-direction:column; align-items:stretch; }
-  .rocker button { background:transparent; font-size:32px; height:72px; }
+  .rocker button { background:transparent; font-size:32px; flex:1; height:auto; }
+  .rocker { justify-content:space-between; }
   .rocker button:active, .rocker button.down { background:var(--key2); }
   .rocker label { text-align:center; color:var(--muted); font-size:13px; letter-spacing:.06em; }
+  .vol { background:var(--fg); }
+  .vol button { color:var(--bg); font-size:52px; font-weight:500; height:80px; flex:none; }
+  .vol button:active, .vol button.down { background:#d4d2cc; }
+  .vol label { color:#5a5e68; font-size:14px; font-weight:700; }
   .mid { display:flex; flex-direction:column; gap:10px; justify-content:space-between; }
   .mid button { flex:1; height:auto; }
   #toast { position:fixed; left:50%; bottom:calc(20px + env(safe-area-inset-bottom)); transform:translateX(-50%); background:#3a1512; color:#ffb4ad;
@@ -89,12 +94,12 @@ const HTML = /*html*/ `<!doctype html>
 </div>
 
 <div class="rockers">
-  <div class="rocker"><button data-k="VOLUP" data-r aria-label="Volume up">+</button><label>VOL</label><button data-k="VOLDOWN" data-r aria-label="Volume down">−</button></div>
+  <div class="rocker"><button data-k="CH_UP" data-r aria-label="Channel up">⌃</button><label>CH</label><button data-k="CH_DOWN" data-r aria-label="Channel down">⌄</button></div>
+  <div class="rocker vol"><button data-k="VOLUP" data-r aria-label="Volume up">+</button><label>VOL</label><button data-k="VOLDOWN" data-r aria-label="Volume down">−</button></div>
   <div class="mid">
     <button data-k="MUTE"><small>MUTE</small></button>
     <button data-k="TV"><small>TV</small></button>
   </div>
-  <div class="rocker"><button data-k="CH_UP" data-r aria-label="Channel up">⌃</button><label>CH</label><button data-k="CH_DOWN" data-r aria-label="Channel down">⌄</button></div>
 </div>
 
 <div class="row c5">
