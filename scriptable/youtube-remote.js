@@ -3,10 +3,56 @@
 // First run: on the TV open YouTube > Settings > "Link with TV code", then type that code here.
 // Optional: sign in to YouTube (gear button) to see your own suggestions and subscriptions.
 // Tap any video in For you / Subs / Search to play it on the TV.
+// The volume bar controls the Panasonic TV itself (same address as the TV Remote script).
 
 const fm = FileManager.local();
 const CFG_PATH = fm.joinPath(fm.documentsDirectory(), "youtube-remote-config.json");
 const readCfg = () => { try { return fm.fileExists(CFG_PATH) ? JSON.parse(fm.readString(CFG_PATH)) : {}; } catch (e) { return {}; } };
+
+// Volume and mute go straight to the Panasonic TV, at the address the TV Remote script uses.
+const TV_DEFAULT_IP = "192.168.1.222";
+function tvIP() {
+  try {
+    const p = fm.joinPath(fm.documentsDirectory(), "tv-remote-config.json");
+    const ip = fm.fileExists(p) ? JSON.parse(fm.readString(p)).ip : "";
+    if (/^(\d{1,3})(\.\d{1,3}){3}$/.test(ip || "")) return ip;
+  } catch (e) {}
+  return TV_DEFAULT_IP;
+}
+async function tvKey(key) {
+  const ip = tvIP();
+  const req = new Request("http://" + ip + ":55000/nrc/control_0");
+  req.method = "POST";
+  req.timeoutInterval = 4;
+  req.headers = {
+    "Content-Type": 'text/xml; charset="utf-8"',
+    "SOAPACTION": '"urn:panasonic-com:service:p00NetworkControl:1#X_SendKey"',
+  };
+  req.body =
+    '<?xml version="1.0" encoding="utf-8"?>' +
+    '<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">' +
+    '<s:Body><u:X_SendKey xmlns:u="urn:panasonic-com:service:p00NetworkControl:1">' +
+    "<X_KeyEvent>NRC_" + key + "-ONOFF</X_KeyEvent>" +
+    "</u:X_SendKey></s:Body></s:Envelope>";
+  try { await req.loadString(); } catch (e) { return "Can't reach the TV at " + ip + " for volume"; }
+  const code = req.response && req.response.statusCode;
+  return code && code !== 200 ? "TV refused the volume change (" + code + ")" : "";
+}
+
+// Waits inside the page for the next volume press, then hands it back to this script.
+const NEXT_TV_KEY = `(() => {
+  if (window.tvq && tvq.length) { completion(tvq.shift()); return; }
+  window.addEventListener("tvkey", () => completion(tvq.shift()), { once: true });
+})()`;
+async function relayVolume(wv, state) {
+  while (state.open) {
+    let key;
+    try { key = await wv.evaluateJavaScript(NEXT_TV_KEY, true); } catch (e) { return; }
+    if (!state.open || !/^(VOLUP|VOLDOWN|MUTE)$/.test(key || "")) continue;
+    const err = await tvKey(key);
+    if (err && state.open) { try { await wv.evaluateJavaScript("toast(" + JSON.stringify(err) + "); 1"); } catch (e) {} }
+  }
+}
 
 // The page is loaded as if it came from YouTube, so it can talk to YouTube directly.
 const ORIGIN = "https://m.youtube.com/";
@@ -56,7 +102,7 @@ const HTML = String.raw`<!doctype html>
   .vol { display:grid; grid-template-columns:1fr auto 1fr; align-items:center; margin-top:12px; background:var(--fg); border-radius:18px; }
   .vol button { background:transparent; color:var(--bg); font-size:44px; font-weight:500; height:72px; }
   .vol button:active, .vol button.down { background:#d4d2cc; }
-  .vol label { color:#5a5e68; font-size:14px; font-weight:700; padding:0 6px; min-width:74px; text-align:center; }
+  .vol .mute { color:#5a5e68; font-size:14px; font-weight:700; padding:0 14px; letter-spacing:.04em; }
   .nav { display:grid; grid-template-columns:1fr 150px 1fr; gap:10px; align-items:center; margin-top:12px; }
   .pad { width:150px; height:150px; display:grid; grid-template:repeat(3,1fr)/repeat(3,1fr); background:var(--key); border-radius:50%; padding:4px; }
   .pad button { background:transparent; height:auto; font-size:18px; border-radius:50%; }
@@ -123,7 +169,7 @@ const HTML = String.raw`<!doctype html>
 
   <div class="vol">
     <button data-a="voldown" data-r aria-label="Volume down">−</button>
-    <label id="vollabel">VOL</label>
+    <button data-a="mute" class="mute">MUTE</button>
     <button data-a="volup" data-r aria-label="Volume up">+</button>
   </div>
 
@@ -307,7 +353,9 @@ const HTML = String.raw`<!doctype html>
   function clock(s) { s = Math.max(0, Math.floor(s)); var h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = s % 60;
                       return (h ? h + ":" + (m < 10 ? "0" : "") : "") + m + ":" + (x < 10 ? "0" : "") + x; }
   function seekTo(t) { t = Math.max(0, st.dur ? Math.min(t, st.dur - 1) : t); st.time = t; st.at = Date.now(); draw(); cmd("seekTo", { newTime: Math.floor(t) }); }
-  function setVol(d) { var v = Math.max(0, Math.min(100, (st.vol === null ? 50 : st.vol) + d)); st.vol = v; draw(); cmd("setVolume", { volume: v }); }
+  // Volume goes to the TV set itself. The script outside this page collects these and sends them on.
+  var tvq = [];
+  function tv(key) { if (tvq.length < 3) { tvq.push(key); window.dispatchEvent(new Event("tvkey")); } }
   function playVideo(id) {
     st.id = id; st.title = titles[id] || ""; st.time = 0; st.dur = 0; st.at = Date.now(); st.state = 3; draw();
     cmd("setPlaylist", { videoId: id, currentTime: 0, currentIndex: -1, audioOnly: "false", listId: "" });
@@ -320,8 +368,9 @@ const HTML = String.raw`<!doctype html>
     prev: function () { cmd("previous"); },
     next: function () { cmd("next"); },
     skipad: function () { cmd("skipAd"); },
-    volup: function () { setVol(5); },
-    voldown: function () { setVol(-5); }
+    volup: function () { tv("VOLUP"); },
+    voldown: function () { tv("VOLDOWN"); },
+    mute: function () { tv("MUTE"); }
   };
   function act(a) {
     if (actions[a]) actions[a]();
@@ -335,7 +384,6 @@ const HTML = String.raw`<!doctype html>
     var img = $("nowimg"), src = st.id ? "https://i.ytimg.com/vi/" + st.id + "/mqdefault.jpg" : "";
     if (img.getAttribute("src") !== src) { if (src) img.src = src; else img.removeAttribute("src"); }
     $("fill").style.width = (st.dur ? Math.min(100, t / st.dur * 100) : 0) + "%";
-    $("vollabel").textContent = st.vol === null ? "VOL" : "VOL " + st.vol;
     var sym = st.state === 1 ? "⏸︎" : "▶︎";
     document.querySelectorAll(".pp").forEach(function (b) { b.textContent = sym; });
   }
@@ -493,7 +541,10 @@ if (config.runsInWidget) {
     const cfg = readCfg();
     const wv = new WebView();
     await wv.loadHTML(HTML.replace("__CFG__", () => JSON.stringify(cfg)), ORIGIN);
+    const state = { open: true };
+    relayVolume(wv, state);
     await wv.present(true);
+    state.open = false;
 
     // After Close: keep the TV link for next time. If the page had gone off to the sign-in screen, reopen the remote.
     let out = "";
