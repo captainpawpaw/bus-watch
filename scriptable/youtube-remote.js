@@ -3,7 +3,8 @@
 // First run: on the TV open YouTube > Settings > "Link with TV code", then type that code here.
 // Optional: sign in to YouTube (gear button) to see your own suggestions and subscriptions.
 // Tap any video in For you / Subs / Search to play it on the TV.
-// The volume bar controls the Panasonic TV itself (same address as the TV Remote script).
+// The volume bar and power button control the Panasonic TV itself (same address as the TV Remote script).
+// START turns the TV on and opens YouTube on the Fire Stick (needs the Fire Stick address, gear button).
 
 const fm = FileManager.local();
 const CFG_PATH = fm.joinPath(fm.documentsDirectory(), "youtube-remote-config.json");
@@ -39,17 +40,52 @@ async function tvKey(key) {
   return code && code !== 200 ? "TV refused the volume change (" + code + ")" : "";
 }
 
-// Waits inside the page for the next volume press, then hands it back to this script.
+// Is the TV on? It answers a simple question when on, refuses it in standby, and is silent when fully off.
+async function tvState(ip) {
+  const req = new Request("http://" + ip + ":55000/dmr/control_0");
+  req.method = "POST";
+  req.timeoutInterval = 3;
+  req.headers = {
+    "Content-Type": 'text/xml; charset="utf-8"',
+    "SOAPACTION": '"urn:schemas-upnp-org:service:RenderingControl:1#GetMute"',
+  };
+  req.body =
+    '<?xml version="1.0" encoding="utf-8"?>' +
+    '<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">' +
+    '<s:Body><u:GetMute xmlns:u="urn:schemas-upnp-org:service:RenderingControl:1">' +
+    "<InstanceID>0</InstanceID><Channel>Master</Channel>" +
+    "</u:GetMute></s:Body></s:Envelope>";
+  try { await req.loadString(); } catch (e) { return "off"; }
+  return req.response && req.response.statusCode === 200 ? "on" : "standby";
+}
+
+// Turn the TV on if it is in standby, then ask the Fire Stick to open YouTube (and play a video, if one was chosen).
+async function wake(fire, video) {
+  if ((await tvState(tvIP())) === "standby") await tvKey("POWER");
+  if (!/^(\d{1,3})(\.\d{1,3}){3}$/.test(fire || "")) return "Add the Fire Stick's address in settings (gear) so I can open YouTube on it";
+  const req = new Request("http://" + fire + ":8009/apps/YouTube");
+  req.method = "POST";
+  req.timeoutInterval = 6;
+  req.headers = { "Content-Type": "text/plain", "Origin": "https://www.youtube.com" };
+  req.body = /^[\w-]{11}$/.test(video || "") ? "v=" + video : "";
+  try { await req.loadString(); } catch (e) { return "Can't reach the Fire Stick at " + fire; }
+  const code = req.response && req.response.statusCode;
+  return code && code >= 300 ? "The Fire Stick would not open YouTube (" + code + ")" : "";
+}
+
+// Waits inside the page for the next thing it wants done on the home network, then hands it back to this script.
 const NEXT_TV_KEY = `(() => {
   if (window.tvq && tvq.length) { completion(tvq.shift()); return; }
   window.addEventListener("tvkey", () => completion(tvq.shift()), { once: true });
 })()`;
 async function relayVolume(wv, state) {
   while (state.open) {
-    let key;
-    try { key = await wv.evaluateJavaScript(NEXT_TV_KEY, true); } catch (e) { return; }
-    if (!state.open || !/^(VOLUP|VOLDOWN|MUTE)$/.test(key || "")) continue;
-    const err = await tvKey(key);
+    let msg;
+    try { msg = JSON.parse(await wv.evaluateJavaScript(NEXT_TV_KEY, true)); } catch (e) { return; }
+    if (!state.open || !msg) continue;
+    let err = "";
+    if (msg.t === "tv" && /^(VOLUP|VOLDOWN|MUTE|POWER)$/.test(msg.key || "")) err = await tvKey(msg.key);
+    else if (msg.t === "wake") err = await wake(msg.fire, msg.v);
     if (err && state.open) { try { await wv.evaluateJavaScript("toast(" + JSON.stringify(err) + "); 1"); } catch (e) {} }
   }
 }
@@ -82,10 +118,13 @@ const HTML = String.raw`<!doctype html>
 
   /* Now playing */
   #now { display:flex; gap:10px; align-items:center; margin-top:10px; background:var(--key); border-radius:16px; padding:8px; min-height:66px; }
-  #now img { width:88px; height:50px; border-radius:8px; object-fit:cover; background:#000; flex:none; }
+  #now img { width:72px; height:41px; border-radius:8px; object-fit:cover; background:#000; flex:none; }
   #now div { min-width:0; flex:1; }
   #now b { display:block; font-size:14px; line-height:1.25; max-height:2.5em; overflow:hidden; }
   #now span { font-size:12px; color:var(--muted); font-weight:500; }
+  #now button { width:46px; height:46px; border-radius:50%; flex:none; background:var(--key2); font-size:20px; }
+  #now .pw { background:var(--accent); }
+  #now button small { font-size:10px; color:var(--fg); }
   #bar { margin-top:12px; height:28px; display:flex; align-items:center; }
   #bar i { display:block; flex:1; height:6px; border-radius:3px; background:var(--key2); position:relative; overflow:hidden; pointer-events:none; }
   #bar i u { position:absolute; left:0; top:0; bottom:0; width:0; background:var(--accent); }
@@ -155,7 +194,9 @@ const HTML = String.raw`<!doctype html>
 <div id="status"></div>
 
 <div class="view on" id="v-remote">
-  <div id="now"><img id="nowimg" alt=""><div><b id="nowtitle">Nothing playing</b><span id="nowtime"></span></div></div>
+  <div id="now"><img id="nowimg" alt=""><div><b id="nowtitle">Nothing playing</b><span id="nowtime"></span></div>
+    <button data-a="startyt" aria-label="Turn on the TV and open YouTube"><small>START</small></button>
+    <button class="pw" data-a="power" aria-label="TV power">⏻</button></div>
   <div id="bar"><i><u id="fill"></u></i></div>
 
   <div class="main">
@@ -199,6 +240,10 @@ const HTML = String.raw`<!doctype html>
     <div><input id="code" inputmode="numeric" placeholder="TV code" autocomplete="off"><button id="link">Link</button></div>
   </div>
   <div class="set">
+    <p id="firemsg">Fire Stick address, so START can open YouTube on it. On the Fire Stick: Settings &gt; My Fire TV &gt; About &gt; Network.</p>
+    <div><input id="fire" inputmode="decimal" placeholder="192.168.1.x" autocomplete="off"><button id="firesave">Save</button></div>
+  </div>
+  <div class="set">
     <p id="signmsg">Sign in to YouTube to see your own suggestions and subscriptions. When you have signed in, tap Close (top left) and the remote reopens.</p>
     <button class="wide" id="signin">Sign in to YouTube</button>
   </div>
@@ -229,7 +274,7 @@ const HTML = String.raw`<!doctype html>
   /* ===================== TALKING TO THE TV (through YouTube) ===================== */
 
   var API = "/api/lounge";
-  var token = "", SID = "", GS = "", rid = 1, ofs = 0, aid = 0, linked = false, listenCtl = null;
+  var token = "", SID = "", GS = "", rid = 1, ofs = 0, aid = 0, linked = false, listenCtl = null, screenOn = true;
   var st = { time: 0, dur: 0, state: 0, at: Date.now(), vol: null, id: "", title: "", ad: false };
   var titles = {};
 
@@ -282,7 +327,13 @@ const HTML = String.raw`<!doctype html>
     } else if (name === "onVolumeChanged") { st.vol = parseInt(arg.volume, 10); draw(); }
     else if (name === "onAdStateChange") { st.ad = arg.adState !== undefined && String(arg.adState) !== "-1"; draw(); }
     else if (name === "adPlaying") { st.ad = true; draw(); }
-    else if (name === "loungeScreenDisconnected") status("YouTube closed on the TV. Open it again.", true);
+    else if (name === "loungeStatus") {
+      // Tells us whether the YouTube app on the TV is actually up right now.
+      try { screenOn = JSON.parse(arg.devices).some(function (d) { return d.type === "LOUNGE_SCREEN"; }); } catch (e) {}
+      if (!screenOn) status("YouTube is not open on the TV. Tap START.", true);
+    }
+    else if (name === "loungeScreenConnected") { screenOn = true; status("Linked to " + (CFG.screenName || "TV")); }
+    else if (name === "loungeScreenDisconnected") { screenOn = false; status("YouTube closed on the TV. Tap START to open it.", true); }
   }
 
   async function connect() {
@@ -297,7 +348,7 @@ const HTML = String.raw`<!doctype html>
     makeParser(onEvent)(new Uint8Array(await r.arrayBuffer()));
     if (!SID) throw new Error("no session");
     linked = true;
-    status("Linked to " + (CFG.screenName || "TV"));
+    if (screenOn) status("Linked to " + (CFG.screenName || "TV"));
     listen();
   }
 
@@ -357,9 +408,29 @@ const HTML = String.raw`<!doctype html>
   function seekTo(t) { t = Math.max(0, st.dur ? Math.min(t, st.dur - 1) : t); st.time = t; st.at = Date.now(); draw(); cmd("seekTo", { newTime: Math.floor(t) }); }
   // Volume goes to the TV set itself. The script outside this page collects these and sends them on.
   var tvq = [];
-  function tv(key) { if (tvq.length < 3) { tvq.push(key); window.dispatchEvent(new Event("tvkey")); } }
+  function home(msg) { if (tvq.length < 3) { tvq.push(JSON.stringify(msg)); window.dispatchEvent(new Event("tvkey")); } }
+  function tv(key) { home({ t: "tv", key: key }); }
+
+  // Turn the TV on, open YouTube on the Fire Stick, then wait for it to come up and (if a video was chosen) play it.
+  var waking = 0;
+  async function wakeTV(id) {
+    var run = ++waking;
+    home({ t: "wake", fire: CFG.fireIp || "", v: id || "" });
+    status("Turning on the TV and opening YouTube…");
+    for (var i = 0; i < 15 && run === waking; i++) {
+      await new Promise(function (ok) { setTimeout(ok, 3000); });
+      if (run !== waking) return;
+      try { linked = false; await connect(); } catch (e) {}
+      if (linked && screenOn) {
+        if (id) cmd("setPlaylist", { videoId: id, currentTime: 0, currentIndex: -1, audioOnly: "false", listId: "" });
+        return;
+      }
+    }
+    if (run === waking) status("YouTube did not come up on the TV. Try START again.", true);
+  }
   function playVideo(id) {
     st.id = id; st.title = titles[id] || ""; st.time = 0; st.dur = 0; st.at = Date.now(); st.state = 3; draw();
+    if (CFG.screenId && CFG.fireIp && !(linked && screenOn)) { wakeTV(id); return; }
     cmd("setPlaylist", { videoId: id, currentTime: 0, currentIndex: -1, audioOnly: "false", listId: "" });
   }
 
@@ -372,7 +443,9 @@ const HTML = String.raw`<!doctype html>
     skipad: function () { cmd("skipAd"); },
     volup: function () { tv("VOLUP"); },
     voldown: function () { tv("VOLDOWN"); },
-    mute: function () { tv("MUTE"); }
+    mute: function () { tv("MUTE"); },
+    power: function () { tv("POWER"); },
+    startyt: function () { wakeTV(""); }
   };
   function act(a) {
     if (actions[a]) actions[a]();
@@ -578,6 +651,14 @@ const HTML = String.raw`<!doctype html>
     } catch (e) {
       $("linkmsg").textContent = "That code was not accepted. Get a fresh code on the TV (YouTube > Settings > Link with TV code) and try again.";
     }
+  });
+  $("fire").value = CFG.fireIp || "";
+  $("firesave").addEventListener("click", function () {
+    var v = $("fire").value.trim().replace(/,/g, ".");
+    var ok = /^\d{1,3}(\.\d{1,3}){3}$/.test(v) && v.split(".").every(function (n) { return Number(n) <= 255; });
+    if (!ok) { $("firemsg").textContent = "That is not a full address. It should look like 192.168.1.50"; return; }
+    CFG.fireIp = v; saveCfg();
+    $("firemsg").textContent = "Saved. START and tapping a video will now open YouTube on the Fire Stick at " + v + ".";
   });
   $("signin").addEventListener("click", function () {
     location.href = "https://accounts.google.com/ServiceLogin?service=youtube&continue=" + encodeURIComponent("https://m.youtube.com/");
