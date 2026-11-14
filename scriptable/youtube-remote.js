@@ -92,22 +92,24 @@ const HTML = String.raw`<!doctype html>
 
   /* The main controls: play/pause biggest, skip either side */
   .main { display:grid; grid-template-columns:1fr 132px 1fr; gap:12px; align-items:center; margin-top:8px; }
-  .main button { height:96px; border-radius:24px; flex-direction:column; gap:2px; font-size:30px; }
-  .main button small { font-size:14px; }
+  .main button { height:68px; border-radius:20px; flex-direction:column; gap:0; font-size:22px; }
+  .main button small { font-size:12px; }
   .main .pp { height:132px; border-radius:50%; background:var(--accent); font-size:54px; }
   .main .pp:active, .main .pp.down { background:#d93a2f; }
   .row { display:grid; gap:10px; margin-top:12px; }
-  .c3 { grid-template-columns:repeat(3,1fr); }
-  .row button { font-size:22px; }
+  .c2 { grid-template-columns:repeat(2,1fr); }
+  .row button { font-size:18px; height:44px; }
   .vol { display:grid; grid-template-columns:1fr auto 1fr; align-items:center; margin-top:12px; background:var(--fg); border-radius:18px; }
-  .vol button { background:transparent; color:var(--bg); font-size:44px; font-weight:500; height:72px; }
+  .vol button { background:transparent; color:var(--bg); font-size:34px; font-weight:500; height:50px; }
   .vol button:active, .vol button.down { background:#d4d2cc; }
-  .vol .mute { color:#5a5e68; font-size:14px; font-weight:700; padding:0 14px; letter-spacing:.04em; }
-  .nav { display:grid; grid-template-columns:1fr 150px 1fr; gap:10px; align-items:center; margin-top:12px; }
-  .pad { width:150px; height:150px; display:grid; grid-template:repeat(3,1fr)/repeat(3,1fr); background:var(--key); border-radius:50%; padding:4px; }
-  .pad button { background:transparent; height:auto; font-size:18px; border-radius:50%; }
+  .vol .mute { color:#5a5e68; font-size:13px; font-weight:700; padding:0 14px; letter-spacing:.04em; }
+  .nav { display:grid; grid-template-columns:1fr 216px 1fr; gap:8px; align-items:center; margin-top:14px; }
+  .nav > button { height:76px; }
+  .nav > button small { font-size:12px; line-height:1.3; }
+  .pad { width:216px; height:216px; display:grid; grid-template:repeat(3,1fr)/repeat(3,1fr); background:var(--key); border-radius:50%; padding:4px; }
+  .pad button { background:transparent; height:auto; font-size:26px; border-radius:50%; }
   .pad button:active, .pad button.down { background:var(--key2); }
-  .pad .ok { background:var(--key2); font-size:14px; }
+  .pad .ok { background:var(--key2); font-size:18px; }
 
   /* Video lists */
   .search { display:flex; gap:8px; margin-top:10px; }
@@ -161,9 +163,8 @@ const HTML = String.raw`<!doctype html>
     <button data-a="fwd10" data-r aria-label="Forward 10 seconds">⏩︎<small>10</small></button>
   </div>
 
-  <div class="row c3">
+  <div class="row c2">
     <button data-a="prev" aria-label="Previous video">⏮︎</button>
-    <button data-a="skipad"><small>SKIP AD</small></button>
     <button data-a="next" aria-label="Next video">⏭︎</button>
   </div>
 
@@ -180,7 +181,7 @@ const HTML = String.raw`<!doctype html>
       <button data-a="dLEFT" data-r aria-label="Left">◀</button><button class="ok" data-a="dENTER">OK</button><button data-a="dRIGHT" data-r aria-label="Right">▶</button>
       <span></span><button data-a="dDOWN" data-r aria-label="Down">▼</button><span></span>
     </div>
-    <span></span>
+    <button data-a="skipad"><small>SKIP<br>AD</small></button>
   </div>
 </div>
 
