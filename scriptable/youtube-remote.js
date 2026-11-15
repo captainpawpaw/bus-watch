@@ -281,7 +281,7 @@ const HTML = String.raw`<!doctype html>
 
   var API = "/api/lounge";
   var token = "", SID = "", GS = "", rid = 1, ofs = 0, aid = 0, linked = false, listenCtl = null, screenOn = true;
-  var st = { time: 0, dur: 0, state: 0, at: Date.now(), vol: null, id: "", title: "", ad: false, canSkip: false, wantSkip: false };
+  var st = { time: 0, dur: 0, state: 0, at: Date.now(), vol: null, id: "", title: "", ad: false, canSkip: false, wantSkip: false, adSeen: false };
   var titles = {};
 
   function form(o) { return Object.keys(o).map(function (k) { return encodeURIComponent(k) + "=" + encodeURIComponent(o[k]); }).join("&"); }
@@ -336,7 +336,8 @@ const HTML = String.raw`<!doctype html>
       st.ad = name === "adPlaying" || String(arg.adState) !== "0";
       st.canSkip = st.ad && String(arg.isSkipEnabled) === "true";
       if (!st.ad) st.wantSkip = false;
-      if (st.canSkip && st.wantSkip) { st.wantSkip = false; cmd("skipAd"); }
+      st.adSeen = true;
+      if (st.canSkip && st.wantSkip) { st.wantSkip = false; trySkip(); }
       draw();
     }
     else if (name === "loungeStatus") {
@@ -446,6 +447,15 @@ const HTML = String.raw`<!doctype html>
     cmd("setPlaylist", { videoId: id, currentTime: 0, currentIndex: -1, audioOnly: "false", listId: "" });
   }
 
+  // Ask YouTube to skip. If the advert is still there shortly after (or the TV tells us nothing about adverts),
+  // press OK on the TV instead, which is how its own Skip button is pressed.
+  var skipT;
+  function trySkip() {
+    cmd("skipAd");
+    clearTimeout(skipT);
+    skipT = setTimeout(function () { if (!st.adSeen || (st.ad && st.canSkip)) cmd("dpadCommand", { key: "ENTER" }); }, 1500);
+  }
+
   var actions = {
     pp: function () { if (st.state === 1) { st.time = nowTime(); st.state = 2; cmd("pause"); } else { st.at = Date.now(); st.state = 1; cmd("play"); } draw(); },
     back10: function () { seekTo(nowTime() - 10); },
@@ -455,8 +465,12 @@ const HTML = String.raw`<!doctype html>
     prev: function () { cmd("previous"); },
     next: function () { cmd("next"); },
     skipad: function () {
-      if (st.ad && !st.canSkip) { st.wantSkip = true; toast("Will skip as soon as YouTube allows it"); draw(); }
-      cmd("skipAd");
+      // Say what the TV has told us, so it is clear why a skip did or did not happen.
+      var info = !st.adSeen ? "the TV has sent no advert info" : !st.ad ? "the TV says no advert is playing"
+               : st.canSkip ? "advert can be skipped" : "advert can't be skipped yet, will skip when allowed";
+      toast("Skip sent: " + info);
+      if (st.ad && !st.canSkip) st.wantSkip = true;
+      trySkip(); draw();
     },
     volup: function () { tv("VOLUP"); },
     voldown: function () { tv("VOLDOWN"); },
