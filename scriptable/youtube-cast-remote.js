@@ -85,160 +85,111 @@ async function fetchPopular() {
   }
 }
 
-// ---------- UI ----------
+// ---------- UI (native table) ----------
 
-function esc(s) {
-  return String(s == null ? "" : s)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
+// Accepts a watch/share/shorts/embed/live link or a bare 11-character ID.
+function parseId(text) {
+  text = (text || "").trim();
+  let m = /(?:[?&]v=|youtu\.be\/|\/shorts\/|\/embed\/|\/live\/)([\w-]{11})/.exec(text);
+  if (m) return m[1];
+  return /^[\w-]{11}$/.test(text) ? text : null;
 }
 
-function renderCards(videos) {
-  return videos
-    .map((v) => {
-      let meta = [v.channel, v.duration].filter(Boolean).map(esc).join(" &bull; ");
-      return (
-        '<div class="video-card" data-id="' + esc(v.id) + '">' +
-        '<img src="' + esc(v.thumb) + '" alt="">' +
-        '<div class="video-info">' +
-        '<div class="video-title">' + esc(v.title) + "</div>" +
-        '<div class="video-meta">' + meta + "</div>" +
-        "</div></div>"
-      );
-    })
-    .join("");
+async function askForLink() {
+  let alert = new Alert();
+  alert.title = "Cast a video";
+  alert.message = "Paste a YouTube link or video ID";
+  let clip = Pasteboard.pasteString() || "";
+  alert.addTextField("Link or ID", parseId(clip) ? clip : "");
+  alert.addAction("Cast");
+  alert.addCancelAction("Cancel");
+  if ((await alert.presentAlert()) === -1) return undefined;
+  return parseId(alert.textFieldValue(0));
 }
 
-function generateHTML(feed) {
-  let note = feed.note ? '<div class="note">' + esc(feed.note) + "</div>" : "";
-  return `<!DOCTYPE html>
-<html>
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<style>
-  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-  body {
-    background-color: #0f0f0f; color: #fff; margin: 0;
-    padding: 16px 16px 80px;
-    font-family: -apple-system, system-ui, sans-serif;
+function actionRow(title, subtitle, onSelect) {
+  let row = new UITableRow();
+  row.height = 56;
+  row.dismissOnSelect = false;
+  let cell = row.addText(title, subtitle);
+  cell.titleFont = Font.semiboldSystemFont(16);
+  cell.subtitleFont = Font.systemFont(13);
+  cell.subtitleColor = Color.gray();
+  row.onSelect = onSelect;
+  return row;
+}
+
+function textRow(text, color) {
+  let row = new UITableRow();
+  row.height = 44;
+  let cell = row.addText(text);
+  cell.titleFont = Font.systemFont(14);
+  cell.titleColor = color;
+  return row;
+}
+
+function videoRow(v, onSelect) {
+  let row = new UITableRow();
+  row.height = 84;
+  row.cellSpacing = 12;
+  row.dismissOnSelect = false;
+  if (v.thumb) {
+    let img = row.addImageAtURL(v.thumb);
+    img.widthWeight = 32;
   }
-  h1 { font-size: 20px; margin: 4px 0 14px; }
-  h2 { font-size: 15px; color: #aaa; margin: 22px 0 10px; font-weight: 600; }
-  .row { display: flex; gap: 8px; }
-  input {
-    flex: 1; min-width: 0; background: #222; color: #fff; border: 1px solid #333;
-    border-radius: 10px; padding: 12px; font-size: 16px;
-  }
-  button {
-    border: 0; border-radius: 10px; padding: 12px 16px; font-size: 16px;
-    font-weight: 600; color: #fff; background: #c00;
-  }
-  button.secondary { background: #333; }
-  button:active, .video-card:active { opacity: 0.6; }
-  .video-card { margin-bottom: 18px; }
-  .video-card img {
-    width: 100%; aspect-ratio: 16 / 9; object-fit: cover;
-    border-radius: 12px; background: #222; display: block;
-  }
-  .video-info { padding: 8px 2px 0; }
-  .video-title { font-size: 15px; font-weight: 600; line-height: 1.3; }
-  .video-meta { font-size: 13px; color: #aaa; margin-top: 3px; }
-  .note { color: #aaa; font-size: 14px; padding: 8px 0; }
-  #status {
-    position: fixed; left: 16px; right: 16px; bottom: 20px;
-    background: #2a2a2a; border-radius: 12px; padding: 12px 14px;
-    font-size: 14px; display: none;
-  }
-</style>
-</head>
-<body>
-  <h1>YouTube to TV</h1>
-  <div class="row">
-    <input id="link" placeholder="Paste YouTube link or video ID" autocapitalize="off" autocorrect="off">
-    <button id="cast">Cast</button>
-    <button id="stop" class="secondary">Stop</button>
-  </div>
-  <h2>Popular</h2>
-  ${note}
-  <div id="feed">${renderCards(feed.videos)}</div>
-  <div id="status"></div>
-<script>
-  // Commands queue up here; the Scriptable side collects them one at a time.
-  var queue = [];
-  var waiter = null;
-  function send(cmd) {
-    if (waiter) { var w = waiter; waiter = null; w(cmd); }
-    else { queue.push(cmd); }
-  }
-  var statusTimer = null;
-  function showStatus(text) {
-    var el = document.getElementById("status");
-    el.textContent = text;
-    el.style.display = "block";
-    clearTimeout(statusTimer);
-    statusTimer = setTimeout(function () { el.style.display = "none"; }, 4000);
-  }
-  function parseId(text) {
-    text = (text || "").trim();
-    var m = /(?:[?&]v=|youtu\\.be\\/|\\/shorts\\/|\\/embed\\/|\\/live\\/)([\\w-]{11})/.exec(text);
-    if (m) return m[1];
-    return /^[\\w-]{11}$/.test(text) ? text : null;
-  }
-  document.getElementById("feed").addEventListener("click", function (e) {
-    var card = e.target.closest(".video-card");
-    if (!card) return;
-    showStatus("Sending...");
-    send({ action: "play", id: card.getAttribute("data-id") });
-  });
-  document.getElementById("cast").addEventListener("click", function () {
-    var id = parseId(document.getElementById("link").value);
-    if (!id) { showStatus("That doesn't look like a YouTube link or ID"); return; }
-    showStatus("Sending...");
-    send({ action: "play", id: id });
-  });
-  document.getElementById("stop").addEventListener("click", function () {
-    showStatus("Stopping...");
-    send({ action: "stop" });
-  });
-</script>
-</body>
-</html>`;
+  let meta = [v.channel, v.duration].filter(Boolean).join(" • ");
+  let cell = row.addText(v.title, meta);
+  cell.widthWeight = 68;
+  cell.titleFont = Font.semiboldSystemFont(15);
+  cell.subtitleFont = Font.systemFont(13);
+  cell.subtitleColor = Color.gray();
+  row.onSelect = onSelect;
+  return row;
 }
 
 // ---------- Main ----------
 
 async function main() {
   let feed = await fetchPopular();
-  let wv = new WebView();
-  await wv.loadHTML(generateHTML(feed));
+  let table = new UITable();
+  table.showSeparators = true;
+  let status = "Tap a video to play it on the TV";
 
-  // Resolves when the user closes the web view.
-  let closed = wv.present(true).then(() => null);
+  let run = async (label, job) => {
+    status = label;
+    draw();
+    status = await job();
+    console.log(status);
+    draw();
+  };
 
-  while (true) {
-    let next = wv.evaluateJavaScript(
-      "if (queue.length) { completion(queue.shift()); } else { waiter = completion; }",
-      true
+  function draw() {
+    table.removeAllRows();
+    table.addRow(textRow(status, Color.red()));
+    table.addRow(
+      actionRow("Cast a link…", "Paste a YouTube link or video ID", async () => {
+        let id = await askForLink();
+        if (id === undefined) return;
+        if (!id) {
+          status = "That doesn't look like a YouTube link or ID";
+          draw();
+          return;
+        }
+        await run("Sending…", () => playOnTV(id));
+      })
     );
-    let cmd = await Promise.race([closed, next]);
-    if (!cmd) break;
-
-    let message;
-    if (cmd.action === "play") message = await playOnTV(cmd.id);
-    else if (cmd.action === "stop") message = await stopOnTV();
-    else message = "Unknown action";
-
-    console.log(cmd.action + (cmd.id ? " " + cmd.id : "") + ": " + message);
-    try {
-      await wv.evaluateJavaScript("showStatus(" + JSON.stringify(message) + "); null");
-    } catch (e) {
-      break; // web view was closed mid-command
+    table.addRow(
+      actionRow("Stop", "Close YouTube on the TV", () => run("Stopping…", stopOnTV))
+    );
+    if (feed.note) table.addRow(textRow(feed.note, Color.gray()));
+    for (let v of feed.videos) {
+      table.addRow(videoRow(v, () => run("Sending: " + v.title, () => playOnTV(v.id))));
     }
+    table.reload();
   }
+
+  draw();
+  await table.present(true);
 }
 
 await main();
