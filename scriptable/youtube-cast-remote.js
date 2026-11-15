@@ -3,27 +3,41 @@
 // icon-color: deep-red; icon-glyph: tv;
 
 const FIRE_IP = "192.168.1.122";
-// DIAL port. Chromecast uses 8008; if you get "not found" / connection
-// errors on a Fire TV, try 8009.
-const DIAL_PORT = 8008;
+// DIAL ports to try, in order. Chromecast uses 8008, Fire TV usually 8009.
+const DIAL_PORTS = [8008, 8009];
 const YOUTUBE_API_KEY = "YOUR_YOUTUBE_API_KEY";
 const REGION = "GB";
 
 const HAS_KEY = YOUTUBE_API_KEY && YOUTUBE_API_KEY !== "YOUR_YOUTUBE_API_KEY";
-const DIAL_URL = "http://" + FIRE_IP + ":" + DIAL_PORT + "/apps/YouTube";
 
 // ---------- TV (DIAL) ----------
 
+// Tries each port until one accepts a connection, then keeps using that one.
 async function dial(method, path, body) {
-  let req = new Request(DIAL_URL + (path || ""));
-  req.method = method;
-  req.timeoutInterval = 8;
-  if (body) {
-    req.headers = { "Content-Type": "text/plain; charset=utf-8" };
-    req.body = body;
+  let lastError;
+  for (let port of DIAL_PORTS.slice()) {
+    let req = new Request("http://" + FIRE_IP + ":" + port + "/apps/YouTube" + (path || ""));
+    req.method = method;
+    req.timeoutInterval = 5;
+    if (body) {
+      req.headers = { "Content-Type": "text/plain; charset=utf-8" };
+      req.body = body;
+    }
+    try {
+      await req.loadString();
+    } catch (e) {
+      lastError = e;
+      continue;
+    }
+    DIAL_PORTS.splice(DIAL_PORTS.indexOf(port), 1);
+    DIAL_PORTS.unshift(port);
+    return req.response.statusCode;
   }
-  await req.loadString();
-  return req.response.statusCode;
+  throw lastError;
+}
+
+function unreachable(e) {
+  return "Could not reach TV at " + FIRE_IP + " (ports " + DIAL_PORTS.join(", ") + ") - " + e.message;
 }
 
 async function playOnTV(videoId) {
@@ -33,7 +47,7 @@ async function playOnTV(videoId) {
     if (status === 404) return "TV has no YouTube app at this address (HTTP 404)";
     return "TV refused the request (HTTP " + status + ")";
   } catch (e) {
-    return "Could not reach TV at " + FIRE_IP + ":" + DIAL_PORT + " - " + e.message;
+    return unreachable(e);
   }
 }
 
@@ -42,7 +56,7 @@ async function stopOnTV() {
     let status = await dial("DELETE", "/run");
     return status >= 200 && status < 300 ? "Stopped" : "Stop failed (HTTP " + status + ")";
   } catch (e) {
-    return "Could not reach TV - " + e.message;
+    return unreachable(e);
   }
 }
 
