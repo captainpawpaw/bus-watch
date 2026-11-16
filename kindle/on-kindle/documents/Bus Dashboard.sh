@@ -19,6 +19,15 @@ fi
 # wake-up timer is set up for the Kindle 4 and may not wake this model.
 sed -i 's|^\([ \t]*\)echo "mem" >/sys/power/state|\1sleep "$duration"|' "$DASH/dash.sh"
 
+# Start with a full (flashing) refresh, to clear what the Kindle was showing.
+sed -i 's|^num_refresh=0$|num_refresh=$FULL_DISPLAY_REFRESH_RATE|' "$DASH/dash.sh"
+
+# Work out the next wake-up after the update instead of before it, so the time
+# spent fetching doesn't push every update late (it keeps the clock on time).
+if ! grep -q "# bus-watch: recheck" "$DASH/dash.sh"; then
+  sed -i '/^    sleep 10$/a\    next_wakeup_secs=$("$DIR/next-wakeup" --schedule="$REFRESH_SCHEDULE" --timezone="$TIMEZONE") # bus-watch: recheck' "$DASH/dash.sh"
+fi
+
 # Make sure kindle-dash's scripts and programs can run.
 chmod +x "$DASH"/*.sh "$DASH"/local/*.sh "$DASH/xh" "$DASH/next-wakeup" 2>/dev/null
 

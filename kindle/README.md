@@ -15,7 +15,7 @@ Made for the basic Kindle (8th generation, 6", 600 × 800). It works in two part
 1. **A small web service on Vercel (free)** gathers the data and draws it as a grey-scale picture.
    Your keys and passwords stay in Vercel's settings, never on the Kindle or in this repo.
 2. **The Kindle** (jailbroken, running [kindle-dash](https://github.com/pascalw/kindle-dash)) downloads
-   that picture every 2 minutes and shows it.
+   that picture every minute and shows it.
 
 Any section you don't set up is left out, and the buses get the space.
 
@@ -29,7 +29,7 @@ Any section you don't set up is left out, and the buses get the space.
 | `HOME_LATLON` | Where to get the weather for, as `latitude,longitude` | In Google Maps, press and hold on your home; the numbers at the top are it. E.g. `51.54,0.13` |
 | `BUS_STOPS` | Your stops, separated by `;`. Add `:` and routes to show only those routes, and `@` and your walk to the stop in minutes. | Find the stop on tfl.gov.uk; its ID is in the page address, e.g. `tfl.gov.uk/bus/stop/490000077E/...` (or send the 5-digit code on the stop sign). Example: `490008458N:62@7; 490008457N:368@10` |
 | `BUS_WALK_MINUTES` | Optional. Walk time for stops without `@`. | e.g. `4` |
-| `TOMTOM_KEY` | Drive time and traffic. Free: 2,500 lookups a day. Each update in a journey's time window uses 2. | Sign up at developer.tomtom.com, then copy the key from your dashboard there. |
+| `TOMTOM_KEY` | Drive time and traffic. Free: 2,500 lookups a day. Each update in a journey's time window uses 2 (so a 90-minute window updated every minute uses about 180). | Sign up at developer.tomtom.com, then copy the key from your dashboard there. |
 | `DRIVE_FROM` | Where your drives start | A UK postcode, e.g. `E6 2PS`, or `latitude,longitude` |
 | `DRIVE_1`, `DRIVE_2`, … | Each journey and when to show it: `days times \| name \| destination`. It shows (and uses TomTom) only during those times. | e.g. `Mon-Fri 06:00-07:30 \| Langdon Academy \| E6 2PS` and `Sat-Sun 18:00-20:00 \| Asda Beckton \| E6 5JP`. Days can also be `Weekdays`, `Weekends`, `Daily` or `Sat,Sun`. To follow your own route instead of the fastest, add `\| via latitude,longitude` parts for points in the middle of roads you take, in order (avoid dual carriageways, where a point can land on the wrong side). |
 | `DRIVE_TO`, `DRIVE_LABEL` | Optional: one journey shown all day instead | Postcode or `latitude,longitude`, and a name |
@@ -87,7 +87,7 @@ The **Bus Dashboard** "book" is a scriptlet: a small script the jailbreak lets y
 library. (KUAL, the older app menu, doesn't work with current jailbreaks.) It also switches kindle-dash
 to plugged-in mode, where the Kindle stays awake between updates instead of going into deep sleep.
 kindle-dash's wake-up timer was made for the Kindle 4 and may not wake newer models, so **keep it
-plugged in**. Updating every 2 minutes would use up the battery in about a day either way.
+plugged in**. Updating every minute would use up the battery in about a day either way.
 
 **To get the normal Kindle back:** restart it (hold the power button for about 40 seconds).
 
