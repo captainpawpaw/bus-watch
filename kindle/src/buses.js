@@ -81,6 +81,8 @@ async function getStop(stop, key, walk, now) {
     leave: catchable ? {
       route: catchable.route,
       at: leaveAt,
+      busAt: catchable.at,
+      busMins: catchable.mins,
       inMins: Math.floor((leaveAt - now) / 60000),
     } : null,
   };

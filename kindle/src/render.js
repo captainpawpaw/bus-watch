@@ -130,9 +130,11 @@ function buses(result, zone, top, bottom) {
   // for first. The clock time stays right even if the picture is a few minutes old.
   const leave = result.value.map(s => s.leave).filter(Boolean).sort((a, b) => a.at - b.at)[0];
   if (leave) {
-    out += text(RIGHT, y, leave.inMins <= 0 ? `Leave now for the ${leave.route}`
-      : `Leave ${clock(leave.at, zone)} for the ${leave.route} (in ${leave.inMins} min)`,
-      { size: 17, bold: true, anchor: "end" });
+    // Which bus it means, and how far away that bus is.
+    const bus = `${leave.route} due in ${leave.busMins} min`;
+    out += text(RIGHT, y, leave.inMins <= 0 ? `Leave now · ${bus}`
+      : `Leave in ${leave.inMins} min (${clock(leave.at, zone)}) · ${bus}`,
+      { size: 16, bold: true, anchor: "end" });
   }
   y += 10;
 
