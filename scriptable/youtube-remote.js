@@ -2,7 +2,7 @@
 // Run it in the Scriptable app. YouTube must be open on the TV.
 // First run: on the TV open YouTube > Settings > "Link with TV code", then type that code here.
 // Optional: sign in to YouTube (gear button) to see your own suggestions and subscriptions.
-// Tap any video in For you / Subs / Search to play it on the TV.
+// Tap any video in For you / Subs / History / Search to play it on the TV.
 // The volume bar and power button control the Panasonic TV itself (same address as the TV Remote script).
 // START turns the TV on and opens YouTube on the Fire Stick (needs the Fire Stick address, gear button).
 
@@ -108,7 +108,8 @@ const HTML = String.raw`<!doctype html>
   button small { font-size:13px; color:var(--muted); font-weight:600; letter-spacing:.04em; }
 
   nav { display:flex; gap:6px; align-items:center; }
-  nav button { flex:1; height:40px; border-radius:20px; font-size:14px; color:var(--muted); background:transparent; }
+  nav { gap:2px; }
+  nav button { flex:1 1 auto; height:38px; padding:0 9px; border-radius:19px; font-size:13px; white-space:nowrap; color:var(--muted); background:transparent; }
   nav button.on { background:var(--fg); color:var(--bg); }
   nav .gear { flex:none; width:40px; background:var(--key); color:var(--fg); }
   #status { margin:8px 2px 0; font-size:12px; font-weight:500; color:var(--muted); min-height:16px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
@@ -161,8 +162,15 @@ const HTML = String.raw`<!doctype html>
   .list { margin-top:10px; padding-bottom:84px; }
   .msg { color:var(--muted); font-size:14px; font-weight:500; padding:24px 6px; text-align:center; line-height:1.4; }
   .vid { display:flex; gap:10px; align-items:center; padding:8px 0; }
-  .vid img { width:132px; height:74px; border-radius:10px; object-fit:cover; background:var(--key); flex:none; }
-  .vid div { flex:1; min-width:0; }
+  .vid .th { position:relative; width:132px; height:74px; border-radius:10px; overflow:hidden; background:var(--key); flex:none; }
+  .vid img { width:100%; height:100%; object-fit:cover; display:block; }
+  .vid em { position:absolute; right:4px; bottom:6px; background:rgba(0,0,0,.82); color:#fff; font-style:normal; font-size:11px; font-weight:600; padding:1px 5px; border-radius:5px; }
+  .vid strong { position:absolute; left:4px; top:4px; background:rgba(0,0,0,.82); color:#fff; font-size:10px; font-weight:700; letter-spacing:.04em; padding:2px 5px; border-radius:5px; }
+  .vid .th i { position:absolute; left:0; right:0; bottom:0; height:4px; background:rgba(255,255,255,.35); }
+  .vid .th u { display:block; height:100%; background:var(--accent); }
+  .vid.watched img { opacity:.45; }
+  .vid.watched b { color:var(--muted); }
+  .vid .tx { flex:1; min-width:0; }
   .vid b { display:block; font-size:14px; line-height:1.25; max-height:2.5em; overflow:hidden; }
   .vid span { display:block; margin-top:3px; font-size:12px; color:var(--muted); font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .vid button { width:40px; height:40px; border-radius:50%; font-size:20px; flex:none; }
@@ -191,6 +199,7 @@ const HTML = String.raw`<!doctype html>
   <button data-tab="remote" class="on">Remote</button>
   <button data-tab="home">For you</button>
   <button data-tab="subs">Subs</button>
+  <button data-tab="hist">History</button>
   <button data-tab="search">Search</button>
   <button data-tab="set" class="gear" aria-label="Settings">⚙︎</button>
 </nav>
@@ -235,6 +244,7 @@ const HTML = String.raw`<!doctype html>
 
 <div class="view" id="v-home"><div class="list" id="l-home"></div></div>
 <div class="view" id="v-subs"><div class="list" id="l-subs"></div></div>
+<div class="view" id="v-hist"><div class="list" id="l-hist"></div></div>
 <div class="view" id="v-search">
   <div class="search"><input id="q" placeholder="Search YouTube" autocomplete="off" enterkeyhint="search"><button id="go">Search</button></div>
   <div class="list" id="l-search"></div>
@@ -503,22 +513,40 @@ const HTML = String.raw`<!doctype html>
   var drag = null;
   function barTime(x) { var r = $("bar").getBoundingClientRect(); return Math.max(0, Math.min(1, (x - r.left) / r.width)) * st.dur; }
   $("bar").addEventListener("touchstart", function (e) { if (!st.dur) return; e.preventDefault(); drag = barTime(e.touches[0].clientX); this.classList.add("drag"); draw(); }, { passive: false });
-  $("bar").addEventListener("touchmove", function (e) { if (drag === null) return; e.preventDefault(); drag = barTime(e.touches[0].clientX); draw(); }, { passive: false });
+  $("bar").addEventListener("touchmove", function (e) {
+    if (drag === null) return;
+    var r = this.getBoundingClientRect(), y = e.touches[0].clientY;
+    if (y < r.top - 60 || y > r.bottom + 60) { drag = null; this.classList.remove("drag"); draw(); return; }   // wandered off: a swipe, not a drag
+    e.preventDefault(); drag = barTime(e.touches[0].clientX); draw();
+  }, { passive: false });
   $("bar").addEventListener("touchend", function () { this.classList.remove("drag"); if (drag === null) return; var t = drag; drag = null; seekTo(t); });
   $("bar").addEventListener("touchcancel", function () { this.classList.remove("drag"); drag = null; draw(); });
   $("bar").addEventListener("click", function (e) { if (st.dur && e.detail) seekTo(barTime(e.clientX)); });
 
-  var holdT, repT;
-  function stop(b) { clearTimeout(holdT); clearInterval(repT); if (b) b.classList.remove("down"); }
+  // Buttons act on a tap: finger down and up in the same place. A swipe or scroll that happens to start on a
+  // button does nothing. Holding still on a repeat button repeats it.
   document.querySelectorAll("button[data-a]").forEach(function (b) {
-    var a = b.dataset.a;
+    var a = b.dataset.a, x0 = 0, y0 = 0, live = false, fired = false, holdT = null, repT = null, lastTouch = 0;
+    function end() { clearTimeout(holdT); clearInterval(repT); holdT = repT = null; live = false; b.classList.remove("down"); }
     b.addEventListener("touchstart", function (e) {
-      e.preventDefault(); b.classList.add("down"); act(a);
-      if (b.hasAttribute("data-r")) holdT = setTimeout(function () { repT = setInterval(function () { act(a); }, 300); }, 500);
-    }, { passive: false });
-    b.addEventListener("touchend", function () { stop(b); });
-    b.addEventListener("touchcancel", function () { stop(b); });
-    b.addEventListener("click", function (e) { if (e.detail) act(a); });
+      end(); live = true; fired = false; x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; b.classList.add("down");
+      if (b.hasAttribute("data-r")) holdT = setTimeout(function () {
+        if (!live) return;
+        fired = true; act(a); repT = setInterval(function () { act(a); }, 300);
+      }, 500);
+    }, { passive: true });
+    b.addEventListener("touchmove", function (e) {
+      if (live && (Math.abs(e.touches[0].clientX - x0) > 10 || Math.abs(e.touches[0].clientY - y0) > 10)) end();
+    }, { passive: true });
+    b.addEventListener("touchend", function (e) {
+      lastTouch = Date.now();
+      if (!live) return;
+      e.preventDefault();
+      var go = !fired; end();
+      if (go) act(a);
+    });
+    b.addEventListener("touchcancel", end);
+    b.addEventListener("click", function (e) { if (e.detail && Date.now() - lastTouch > 800) act(a); });
   });
 
   /* ===================== SUGGESTIONS, SUBSCRIPTIONS, SEARCH ===================== */
@@ -532,29 +560,46 @@ const HTML = String.raw`<!doctype html>
     return "";
   }
   // Walk whatever YouTube sent and pull out anything that looks like a video.
+  // Look anywhere inside one list item for a piece of text or a number.
+  function findText(o, re) {
+    var hit = "";
+    (function walk(x) {
+      if (hit || x === null || x === undefined) return;
+      if (typeof x === "string") { if (re.test(x)) hit = x; return; }
+      if (typeof x !== "object") return;
+      for (var k in x) { if (k === "accessibility" || k === "accessibilityData" || k === "trackingParams") continue; walk(x[k]); }
+    })(o);
+    return hit;
+  }
+  function findNumber(o, keys) {
+    var hit = null;
+    (function walk(x) {
+      if (hit !== null || !x || typeof x !== "object") return;
+      for (var k in x) { if (keys.indexOf(k) >= 0 && typeof x[k] === "number") { hit = x[k]; return; } walk(x[k]); }
+    })(o);
+    return hit;
+  }
+  var RE_LEN = /^\d{1,2}:\d\d(:\d\d)?$/, RE_WHEN = /\bago$|^streamed |^premiered /i;
   function findVideos(data) {
     var out = [], seen = {};
-    function add(id, title, by, len, when) {
+    function add(o, id, title, by, len, when) {
       if (typeof id !== "string" || id.length !== 11 || !title || seen[id]) return;
-      seen[id] = 1; out.push({ id: id, title: title, by: by, len: len, when: when });
+      var pct = findNumber(o, ["percentDurationWatched", "startPercent"]);
+      seen[id] = 1;
+      out.push({ id: id, title: title, by: by, len: len || findText(o, RE_LEN), when: when || findText(o, RE_WHEN),
+                 pct: pct === null ? (o.isWatched === true ? 100 : 0) : Math.max(0, Math.min(100, pct)) });
     }
     (function walk(o) {
       if (!o || typeof o !== "object") return;
       if (Array.isArray(o)) { o.forEach(walk); return; }
       if (typeof o.videoId === "string" && (o.headline || o.title)) {
-        add(o.videoId, txt(o.headline || o.title), txt(o.shortBylineText || o.ownerText || o.longBylineText), txt(o.lengthText), txt(o.publishedTimeText));
+        add(o, o.videoId, txt(o.headline || o.title), txt(o.shortBylineText || o.ownerText || o.longBylineText), txt(o.lengthText), txt(o.publishedTimeText));
         return;
       }
       if (typeof o.contentId === "string" && /VIDEO$/.test(o.contentType || "") && o.metadata) {
-        var m = o.metadata.lockupMetadataViewModel || {}, by = "", when = "";
-        try {
-          var rows = m.metadata.contentMetadataViewModel.metadataRows;
-          by = txt(rows[0].metadataParts[0].text);
-          rows.forEach(function (row) { (row.metadataParts || []).forEach(function (part) {
-            var t = txt(part.text); if (/ago|streamed|premiered/i.test(t)) when = t;
-          }); });
-        } catch (e) {}
-        add(o.contentId, txt(m.title), by, "", when);
+        var m = o.metadata.lockupMetadataViewModel || {}, by = "";
+        try { by = txt(m.metadata.contentMetadataViewModel.metadataRows[0].metadataParts[0].text); } catch (e) {}
+        add(o, o.contentId, txt(m.title), by, "", "");
         return;
       }
       for (var k in o) walk(o[k]);
@@ -614,14 +659,23 @@ const HTML = String.raw`<!doctype html>
       L.seen[v.id] = 1; added++; L.count++;
       titles[v.id] = v.title;
       var row = document.createElement("div"); row.className = "vid";
+      var watched = v.pct >= 90;
+      if (v.pct > 0) row.classList.add(watched ? "watched" : "part");
+      var th = document.createElement("div"); th.className = "th";
       var img = document.createElement("img"); img.loading = "lazy"; img.alt = ""; img.src = "https://i.ytimg.com/vi/" + v.id + "/mqdefault.jpg";
+      th.appendChild(img);
+      if (v.len) { var len = document.createElement("em"); len.textContent = v.len; th.appendChild(len); }
+      if (watched) { var tag = document.createElement("strong"); tag.textContent = "WATCHED"; th.appendChild(tag); }
+      if (v.pct > 0) { var bar = document.createElement("i"), fill = document.createElement("u"); fill.style.width = v.pct + "%"; bar.appendChild(fill); th.appendChild(bar); }
       var d = document.createElement("div"), b = document.createElement("b"), s = document.createElement("span");
-      b.textContent = v.title; s.textContent = [v.by, v.len].filter(Boolean).join(" · ");
-      var w = document.createElement("span"); w.textContent = v.when || "";
-      d.appendChild(b); d.appendChild(s); if (v.when) d.appendChild(w);
+      d.className = "tx";
+      b.textContent = v.title; s.textContent = v.by || "";
+      var w = document.createElement("span");
+      w.textContent = [v.when, v.pct > 0 && !watched ? "Part watched" : ""].filter(Boolean).join(" · ");
+      d.appendChild(b); if (v.by) d.appendChild(s); if (w.textContent) d.appendChild(w);
       var add = document.createElement("button"); add.textContent = "+"; add.setAttribute("aria-label", "Add to queue");
       add.addEventListener("click", function (e) { e.stopPropagation(); cmd("addVideo", { videoId: v.id }); toast("Added to the queue"); });
-      row.appendChild(img); row.appendChild(d); row.appendChild(add);
+      row.appendChild(th); row.appendChild(d); row.appendChild(add);
       row.addEventListener("click", function () { row.classList.add("sent"); playVideo(v.id); toast("Playing on the TV"); });
       L.box.insertBefore(row, L.foot);
     });
@@ -678,11 +732,12 @@ const HTML = String.raw`<!doctype html>
   function show(tab) {
     document.querySelectorAll("nav button").forEach(function (b) { b.classList.toggle("on", b.dataset.tab === tab); });
     document.querySelectorAll(".view").forEach(function (v) { v.classList.toggle("on", v.id === "v-" + tab); });
-    $("mini").classList.toggle("on", tab === "home" || tab === "subs" || tab === "search");
+    $("mini").classList.toggle("on", tab === "home" || tab === "subs" || tab === "hist" || tab === "search");
     window.scrollTo(0, 0);
     var fresh = function (k) { return loaded[k] && Date.now() - loaded[k] < 5 * 60000; };
     if (tab === "home" && !fresh("home")) loadList("home", "/", true);
     if (tab === "subs" && !fresh("subs")) loadList("subs", "/feed/subscriptions", true);
+    if (tab === "hist") loadList("hist", "/feed/history", true);
   }
   document.querySelectorAll("nav button").forEach(function (b) { b.addEventListener("click", function () { show(b.dataset.tab); }); });
 
