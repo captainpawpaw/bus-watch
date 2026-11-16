@@ -282,10 +282,62 @@ function energy(result, top) {
   return out;
 }
 
-export function renderSvg({ now, zone, weather, bus, car, power }) {
+// Gas and electric for page 2: a big block each with a 7-day chart.
+function energyBlock(name, f, days, top) {
+  let y = top + 24;
+  let out = heading(y, name);
+  if (!f) return out + text(M, y + 32, "No meter found", { size: 18, fill: GREY });
+  const cost = i => (f.pence && f.pence[i] != null ? ` · £${(f.pence[i] / 100).toFixed(2)}` : "");
+  const yest = f.kwh[5], today = f.kwh[6];
+  out += text(M, y + 36, yest == null ? "Yesterday: no data yet" : `Yesterday ${yest.toFixed(1)} kWh${cost(5)}`,
+    { size: 26, bold: true, max: WIDTH - 2 * M });
+  out += text(M, y + 60, today ? `Today so far ${today.toFixed(1)} kWh${cost(6)}` : "Today: no data yet",
+    { size: 17, fill: GREY, max: WIDTH - 2 * M });
+
+  // Last 7 days as bars with their values, yesterday in black.
+  const chartTop = y + 92, chartH = 76, max = Math.max(...f.kwh.map(v => v || 0), 0.1);
+  const barW = (WIDTH - 2 * M) / 7;
+  f.kwh.forEach((v, i) => {
+    const bx = M + i * barW + 8, w = barW - 16, cx = bx + w / 2;
+    const h = v ? Math.max(2, (v / max) * chartH) : 0;
+    if (h) {
+      out += `<rect x="${bx}" y="${chartTop + chartH - h}" width="${w}" height="${h}" fill="${i === 5 ? "#000" : "#999"}"/>`;
+      out += text(cx, chartTop + chartH - h - 5, v.toFixed(v < 10 ? 1 : 0), { size: 13, fill: GREY, anchor: "middle" });
+    }
+    out += text(cx, chartTop + chartH + 18, days[i], { size: 14, fill: GREY, anchor: "middle", bold: i === 5 });
+  });
+  return out;
+}
+
+function backButton() {
+  const w = 220, h = 40, x = (WIDTH - w) / 2, y = HEIGHT - h - 12;
+  return `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="20" fill="#fff" stroke="#000" stroke-width="2.5"/>` +
+    `<path d="M${x + 30} ${y + h / 2} l12 -8 v16 z" fill="#000"/>` +
+    text(WIDTH / 2 + 12, y + 27, "Tap for buses", { size: 18, bold: true, anchor: "middle" });
+}
+
+function svgDoc(body) {
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${WIDTH}" height="${HEIGHT}" viewBox="0 0 ${WIDTH} ${HEIGHT}" font-family="Inter">` +
+    `<rect width="100%" height="100%" fill="#fff"/>${body}</svg>`;
+}
+
+// page 1: clock, weather, buses and drive. page 2: clock, weather and energy.
+export function renderSvg({ now, zone, weather, bus, car, power, page = 1 }) {
+  const top = header(now, zone, weather) + forecast(weather);
+  if (page === 2) {
+    let body;
+    if (!power.ok) {
+      body = heading(320, "Energy") + unavailable(350, "Smart meter", power.error);
+    } else {
+      const e = power.value;
+      body = energyBlock("Electric", e.electric, e.days, 298) + line(520) + energyBlock("Gas", e.gas, e.days, 520);
+    }
+    return svgDoc(top + body + backButton());
+  }
   // Sections that aren't configured are left out and the space goes to the buses.
+  // (Without the page 2 setup, energy still shows here at the bottom.)
   const showDrive = car.ok || !car.missing;
-  const showEnergy = power.ok || !power.missing;
+  const showEnergy = power && (power.ok || !power.missing);
   let bottom = HEIGHT;
   let energySvg = "", driveSvg = "";
   if (showEnergy) {
@@ -296,7 +348,5 @@ export function renderSvg({ now, zone, weather, bus, car, power }) {
     bottom -= car.ok && car.value.map ? DRIVE_MAP_H : DRIVE_H;
     driveSvg = line(bottom) + drive(car, zone, bottom);
   }
-  const body = header(now, zone, weather) + forecast(weather) + buses(bus, zone, 298, bottom) + driveSvg + energySvg;
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${WIDTH}" height="${HEIGHT}" viewBox="0 0 ${WIDTH} ${HEIGHT}" font-family="Inter">` +
-    `<rect width="100%" height="100%" fill="#fff"/>${body}</svg>`;
+  return svgDoc(top + buses(bus, zone, 298, bottom) + driveSvg + energySvg);
 }

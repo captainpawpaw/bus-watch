@@ -12,16 +12,22 @@ const settle = (configured, fn) => configured
   ? fn().then(value => ({ ok: true, value }), error => ({ ok: false, error }))
   : Promise.resolve({ ok: false, missing: true, error: new Error("not set up") });
 
-export async function buildSvg(env, now = new Date()) {
+export const hasEnergy = env => !!(env.GLOW_USERNAME && env.GLOW_PASSWORD);
+
+// page 1: clock, weather, buses, drive. page 2: clock, weather, energy.
+// Without ?page (the old single-page layout), energy sits at the bottom of page 1.
+export async function buildSvg(env, now = new Date(), page = 1, { single = true } = {}) {
+  const wantBus = page === 1, wantEnergy = page === 2 || single;
+  const skip = Promise.resolve({ ok: false, missing: true });
   const [weather, bus, car, power] = await Promise.all([
     settle(true, () => getWeather(env)),
-    settle(true, () => getBuses(env, now)),
-    settle(hasDrives(env), () => getDrive(env, now)),
-    settle(!!(env.GLOW_USERNAME && env.GLOW_PASSWORD), () => getEnergy(env, now)),
+    wantBus ? settle(true, () => getBuses(env, now)) : skip,
+    wantBus ? settle(hasDrives(env), () => getDrive(env, now)) : skip,
+    wantEnergy ? settle(hasEnergy(env), () => getEnergy(env, now)) : skip,
   ]);
   // A drive outside its days and hours is left out, like one that isn't set up.
   const drive = car.ok && car.value === null ? { ok: false, missing: true } : car;
-  return renderSvg({ now, zone: tz(env), weather, bus, car: drive, power });
+  return renderSvg({ now, zone: tz(env), weather, bus, car: drive, power, page });
 }
 
 export async function svgToPng(svg, Resvg, fonts) {
@@ -50,7 +56,15 @@ export async function handle(request, env, { Resvg, fonts }) {
       headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
     });
   }
-  const svg = await buildSvg(env);
+  // ?page=1 or ?page=2. Asking for a page at all means the multi-page layout, so
+  // energy moves to page 2; without ?page the single-page layout stays as it was.
+  const pageParam = url.searchParams.get("page");
+  const page = pageParam === "2" ? 2 : 1;
+  if (page === 2 && !hasEnergy(env)) {
+    // Tells the Kindle there's no page 2 yet, so it just shows page 1.
+    return new Response("No page 2: the smart meter isn't set up.", { status: 404 });
+  }
+  const svg = await buildSvg(env, new Date(), page, { single: pageParam === null });
   if (url.pathname.endsWith(".svg") || url.searchParams.get("format") === "svg") {
     return new Response(svg, { headers: { "content-type": "image/svg+xml", "cache-control": "no-store" } });
   }
@@ -58,12 +72,13 @@ export async function handle(request, env, { Resvg, fonts }) {
   return new Response(png, { headers: { "content-type": "image/png", "cache-control": "no-store" } });
 }
 
-// A page for phones and computers that shows the dashboard and refreshes it
-// just after each minute, swapping the picture only once the new one has loaded.
+// A page for phones and computers that works like the Kindle: new pictures just
+// after each minute, swapping between page 1 (buses) and page 2 (energy) every
+// 10 seconds, and a tap or click goes back to page 1 for 5 minutes. It shows the
+// PNGs, not the SVG: they have the dashboard's font built in, so they look
+// exactly like the Kindle (browsers don't have Inter and fall back to Times).
 function viewerPage(key) {
-  // The PNG, not the SVG: it has the dashboard's font built in, so it looks
-  // exactly like the Kindle (browsers don't have Inter and fall back to Times).
-  const src = `/dashboard.png?key=${encodeURIComponent(key)}`;
+  const base = `/dashboard.png?key=${encodeURIComponent(key)}`;
   return `<!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8">
@@ -72,21 +87,37 @@ function viewerPage(key) {
 <noscript><meta http-equiv="refresh" content="60"></noscript>
 <style>
   html, body { margin: 0; height: 100%; background: #111; }
-  body { display: flex; align-items: center; justify-content: center; }
-  img { max-width: 100vw; max-height: 100vh; background: #fff; image-rendering: auto; }
+  body { display: flex; align-items: center; justify-content: center; cursor: pointer; }
+  img { max-width: 100vw; max-height: 100vh; background: #fff; }
 </style>
 </head><body>
-<img id="dash" src="${src}&t=${Date.now()}" alt="Dashboard">
+<img id="dash" src="${base}&page=1" alt="Dashboard">
 <script>
+  const BASE = ${JSON.stringify(base)}, ROTATE = 10000, HOLD = 300000;
   const img = document.getElementById("dash");
-  function refresh() {
+  const pages = { 1: img.src, 2: null };
+  let tapped = 0, shown = 1;
+
+  function load(n) {
     const next = new Image();
-    next.onload = () => { img.src = next.src; };
-    next.src = ${JSON.stringify(src)} + "&t=" + Date.now();
-    // Next update 2 seconds after the next minute starts, so the clock stays right.
+    next.onload = () => { pages[n] = next.src; show(true); };
+    next.onerror = () => { if (n === 2) { pages[2] = null; show(); } };
+    next.src = BASE + "&page=" + n + "&t=" + Date.now();
+  }
+  function show(force) {
+    const now = Date.now();
+    const want = pages[2] && now - tapped >= HOLD && Math.floor(now / ROTATE) % 2 === 1 ? 2 : 1;
+    if (want !== shown || force) { img.src = pages[want]; shown = want; }
+  }
+  function refresh() {
+    load(1); load(2);
+    // Next pictures 2 seconds after the next minute starts, so the clock stays right.
     setTimeout(refresh, 62000 - (Date.now() % 60000));
   }
+  document.body.addEventListener("click", () => { tapped = Date.now(); show(); });
+  load(2);
   setTimeout(refresh, 62000 - (Date.now() % 60000));
+  setInterval(show, 1000);
 </script>
 </body></html>`;
 }
