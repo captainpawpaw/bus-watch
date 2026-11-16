@@ -637,18 +637,24 @@ const HTML = String.raw`<!doctype html>
       return "SAPISIDHASH " + ts + "_" + hex;
     } catch (e) { return ""; }
   }
-  async function fetchMore(L) {
+  // Ask YouTube directly, the way its own pages do once they are open.
+  async function api(L, kind, extra) {
     var headers = { "Content-Type": "application/json", "X-Youtube-Client-Name": "2", "X-Youtube-Client-Version": L.ver };
     if (L.visitor) headers["X-Goog-Visitor-Id"] = L.visitor;
     var auth = await signedHeader();
     if (auth) { headers["Authorization"] = auth; headers["X-Origin"] = "https://m.youtube.com"; headers["X-Goog-AuthUser"] = "0"; }
-    var kind = /SEARCH/.test(L.more.request || "") ? "search" : "browse";
-    var r = await fetch("/youtubei/v1/" + kind + "?prettyPrint=false", { method: "POST", credentials: "include", headers: headers,
-      body: JSON.stringify({ context: { client: { clientName: "MWEB", clientVersion: L.ver, hl: L.hl || "en", gl: L.gl || "US", visitorData: L.visitor } },
-                             continuation: L.more.token }) });
-    if (!r.ok) throw new Error("more " + r.status);
+    var body = { context: { client: { clientName: "MWEB", clientVersion: L.ver, hl: L.hl || "en", gl: L.gl || "US", visitorData: L.visitor } } };
+    for (var k in extra) body[k] = extra[k];
+    var r = await fetch("/youtubei/v1/" + kind + "?prettyPrint=false", { method: "POST", credentials: "include", headers: headers, body: JSON.stringify(body) });
+    if (!r.ok) throw new Error("YouTube said " + r.status);
     return r.json();
   }
+  function fetchMore(L) { return api(L, /SEARCH/.test(L.more.request || "") ? "search" : "browse", { continuation: L.more.token }); }
+  function settingsOf(html) {
+    return { ver: setting(html, "INNERTUBE_CLIENT_VERSION") || setting(html, "INNERTUBE_CONTEXT_CLIENT_VERSION"),
+             visitor: setting(html, "VISITOR_DATA"), hl: setting(html, "HL"), gl: setting(html, "GL") };
+  }
+  var lastSettings = null, signedIn = false;
 
   var MIN_ITEMS = 20;
   var loaded = {}, lists = {};
@@ -697,31 +703,51 @@ const HTML = String.raw`<!doctype html>
     L.busy = false;
     if (L.more) { L.foot.textContent = "Show more"; L.foot.style.display = ""; } else L.foot.style.display = "none";
   }
-  async function loadList(key, path, needsSignIn) {
+  async function loadList(key, path, needsSignIn, browseId) {
     var box = $("l-" + key);
     box.innerHTML = '<div class="msg">Loading…</div>';
+    var why = [], data = null, ctx = null;
+    // First try the ordinary YouTube page for this list.
     try {
       var r = await fetch(path, { credentials: "include" });
       var html = await r.text();
-      var signedIn = /"LOGGED_IN":\s*true/.test(html);
-      var data = pageData(html);
-      var foot = document.createElement("button"); foot.className = "morebtn"; foot.style.display = "none";
-      var L = lists[key] = { box: box, foot: foot, seen: {}, count: 0, busy: false, more: findMore(data),
-                             ver: setting(html, "INNERTUBE_CLIENT_VERSION") || setting(html, "INNERTUBE_CONTEXT_CLIENT_VERSION"),
-                             visitor: setting(html, "VISITOR_DATA"), hl: setting(html, "HL"), gl: setting(html, "GL") };
-      box.innerHTML = ""; box.appendChild(foot);
-      foot.addEventListener("click", function () { fill(L, L.count + MIN_ITEMS); });
-      addVideos(L, findVideos(data));
-      if (L.ver) await fill(L, MIN_ITEMS); else L.more = null;
-      if (!L.count) {
-        box.innerHTML = '<div class="msg"></div>';
-        box.firstChild.textContent = needsSignIn && !signedIn ? "Sign in to YouTube (gear button) to see this." : "Nothing to show here right now.";
-        return;
-      }
-      loaded[key] = Date.now();
-    } catch (e) {
-      box.innerHTML = '<div class="msg">Could not load this. Check your connection and try again.</div>';
+      if (/"LOGGED_IN":\s*true/.test(html)) signedIn = true;
+      var here = settingsOf(html);
+      if (here.ver) ctx = lastSettings = here;
+      data = pageData(html);
+    } catch (e) { why.push("page: " + (e && e.message || e)); }
+    // If that gave nothing, ask YouTube for the list directly.
+    if (browseId && (!data || !findVideos(data).length)) {
+      try {
+        if (!lastSettings) {
+          var h = await (await fetch("/", { credentials: "include" })).text();
+          if (/"LOGGED_IN":\s*true/.test(h)) signedIn = true;
+          lastSettings = settingsOf(h);
+        }
+        if (!lastSettings.ver) throw new Error("no YouTube settings found");
+        var direct = await api(lastSettings, "browse", { browseId: browseId });
+        if (!data || findVideos(direct).length) { data = direct; ctx = lastSettings; }
+      } catch (e) { why.push("direct: " + (e && e.message || e)); }
     }
+    if (!data) {
+      box.innerHTML = '<div class="msg"></div>';
+      box.firstChild.textContent = "Could not load this (" + why.join("; ") + ").";
+      return;
+    }
+    ctx = ctx || lastSettings || {};
+    var foot = document.createElement("button"); foot.className = "morebtn"; foot.style.display = "none";
+    var L = lists[key] = { box: box, foot: foot, seen: {}, count: 0, busy: false, more: findMore(data),
+                           ver: ctx.ver, visitor: ctx.visitor, hl: ctx.hl, gl: ctx.gl };
+    box.innerHTML = ""; box.appendChild(foot);
+    foot.addEventListener("click", function () { fill(L, L.count + MIN_ITEMS); });
+    addVideos(L, findVideos(data));
+    if (L.ver) await fill(L, MIN_ITEMS); else L.more = null;
+    if (!L.count) {
+      box.innerHTML = '<div class="msg"></div>';
+      box.firstChild.textContent = needsSignIn && !signedIn ? "Sign in to YouTube (gear button) to see this." : "Nothing to show here right now.";
+      return;
+    }
+    loaded[key] = Date.now();
   }
   function search() { var q = $("q").value.trim(); if (!q) return; $("q").blur(); loadList("search", "/results?search_query=" + encodeURIComponent(q), false); }
   $("go").addEventListener("click", search);
@@ -735,9 +761,9 @@ const HTML = String.raw`<!doctype html>
     $("mini").classList.toggle("on", tab === "home" || tab === "subs" || tab === "hist" || tab === "search");
     window.scrollTo(0, 0);
     var fresh = function (k) { return loaded[k] && Date.now() - loaded[k] < 5 * 60000; };
-    if (tab === "home" && !fresh("home")) loadList("home", "/", true);
-    if (tab === "subs" && !fresh("subs")) loadList("subs", "/feed/subscriptions", true);
-    if (tab === "hist") loadList("hist", "/feed/history", true);
+    if (tab === "home" && !fresh("home")) loadList("home", "/", true, "FEwhat_to_watch");
+    if (tab === "subs" && !fresh("subs")) loadList("subs", "/feed/subscriptions", true, "FEsubscriptions");
+    if (tab === "hist") loadList("hist", "/feed/history", true, "FEhistory");
   }
   document.querySelectorAll("nav button").forEach(function (b) { b.addEventListener("click", function () { show(b.dataset.tab); }); });
 
