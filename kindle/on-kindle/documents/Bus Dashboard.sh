@@ -4,7 +4,8 @@
 #
 # Tap this "book" to start the dashboard. To get the normal Kindle back, restart it
 # (hold the power button for about 40 seconds).
-# Needs kindle-dash copied to the Kindle's drive as a folder called "dashboard".
+# Needs kindle-dash copied to the Kindle's drive as a folder called "dashboard",
+# and Wi-Fi switched on (Airplane mode off).
 
 DASH=/mnt/us/dashboard
 
@@ -18,11 +19,30 @@ fi
 # wake-up timer is set up for the Kindle 4 and may not wake this model.
 sed -i 's|^\([ \t]*\)echo "mem" >/sys/power/state|\1sleep "$duration"|' "$DASH/dash.sh"
 
-# Make sure kindle-dash's scripts can run.
+# Start with a full (flashing) refresh, to clear what the Kindle was showing.
+sed -i 's|^num_refresh=0$|num_refresh=$FULL_DISPLAY_REFRESH_RATE|' "$DASH/dash.sh"
+
+# Work out the next wake-up after the update instead of before it, so the time
+# spent fetching doesn't push every update late (it keeps the clock on time).
+if ! grep -q "# bus-watch: recheck" "$DASH/dash.sh"; then
+  sed -i '/^    sleep 10$/a\    next_wakeup_secs=$("$DIR/next-wakeup" --schedule="$REFRESH_SCHEDULE" --timezone="$TIMEZONE") # bus-watch: recheck' "$DASH/dash.sh"
+fi
+
+# Make sure kindle-dash's scripts and programs can run.
 chmod +x "$DASH"/*.sh "$DASH"/local/*.sh "$DASH/xh" "$DASH/next-wakeup" 2>/dev/null
 
-# Stop the Kindle's own screen so it doesn't draw over the dashboard.
-# The name of this service differs between firmware versions, so try each.
-(/etc/init.d/framework stop || stop framework || stop lab126_gui) >/dev/null 2>&1
+# The rest runs in its own background process, because this script is started
+# from the Kindle's screen, which is about to be switched off.
+eips 1 1 "Starting Bus Dashboard..."
+DETACH=nohup
+command -v setsid >/dev/null 2>&1 && DETACH=setsid
+$DETACH sh -c '
+  sleep 3
+  # Stop the Kindle'"'"'s own screen so it does not draw over the dashboard.
+  # Its name differs between firmware versions, so try each.
+  (/etc/init.d/framework stop || stop framework || stop lab126_gui) >/dev/null 2>&1
+  sleep 2
+  sh '"$DASH"'/start.sh
+' </dev/null >"$DASH/launch.log" 2>&1 &
 
-sh "$DASH/start.sh"
+exit 0
