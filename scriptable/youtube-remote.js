@@ -273,6 +273,13 @@ const HTML = String.raw`<!doctype html>
 <div id="toast"></div>
 
 <script>
+  // Shows any fault in the remote's own code on screen, so it can be reported.
+  window.onerror = function (msg, src, line) {
+    var el = document.getElementById("status");
+    if (el) { el.className = "bad"; el.style.whiteSpace = "normal"; el.textContent = "Remote error (line " + line + "): " + msg; }
+  };
+</script>
+<script>
   var CFG = __CFG__;
   try { if (!CFG.screenId) { var saved = JSON.parse(localStorage.getItem("ytRemoteCfg") || "{}"); if (saved.screenId) CFG = saved; } } catch (e) {}
   if (!CFG.deviceId) CFG.deviceId = "r" + Math.random().toString(36).slice(2) + Date.now().toString(36);
