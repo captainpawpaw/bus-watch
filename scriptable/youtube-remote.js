@@ -290,7 +290,7 @@ const HTML = String.raw`<!doctype html>
   var toastT;
   function toast(msg) {
     var t = $("toast"); t.textContent = msg; t.classList.add("show");
-    clearTimeout(toastT); toastT = setTimeout(function () { t.classList.remove("show"); }, 3000);
+    clearTimeout(toastT); toastT = setTimeout(function () { t.classList.remove("show"); }, 3000 + msg.length * 40);
   }
   function status(msg, bad) { var s = $("status"); s.textContent = msg; s.className = bad ? "bad" : ""; }
 
@@ -338,7 +338,11 @@ const HTML = String.raw`<!doctype html>
     };
   }
 
+  // A short record of what the TV has been telling us, shown when Skip Ad is pressed.
+  var heard = 0, recent = [];
   function onEvent(name, arg, all) {
+    heard++;
+    if (name !== "noop" && recent[recent.length - 1] !== name) { recent.push(name); if (recent.length > 4) recent.shift(); }
     if (name === "c") SID = arg;
     else if (name === "S") GS = arg;
     else if (name === "nowPlaying" || name === "onStateChange") {
@@ -392,7 +396,7 @@ const HTML = String.raw`<!doctype html>
     var ctl = listenCtl = new AbortController(), mySID = SID;
     while (linked && SID === mySID && !ctl.signal.aborted) {
       try {
-        var r = await fetch(API + "/bc/bind?" + form({ SID: SID, gsessionid: GS, RID: "rpc", VER: 8, CVER: 1, AID: aid, CI: 0, TYPE: "xmlhttp",
+        var r = await fetch(API + "/bc/bind?" + form({ name: "iPhone remote", loungeIdToken: token, SID: SID, AID: aid, gsessionid: GS, device: "REMOTE_CONTROL", app: "youtube-desktop", v: 2, RID: "rpc", VER: 8, CI: 0, TYPE: "xmlhttp",
                             auth_failure_option: "send_error" }), { signal: ctl.signal, headers: { "X-YouTube-LoungeId-Token": token } });
         if (!r.ok) { if (SID === mySID) { linked = false; start(); } return; }
         var feed = makeParser(onEvent), reader = r.body.getReader();
@@ -413,7 +417,7 @@ const HTML = String.raw`<!doctype html>
         var send = function () {
           var data = { count: 1, ofs: ofs++, req0__sc: name };
           for (var k in args || {}) data["req0_" + k] = args[k];
-          return post(API + "/bc/bind?" + form({ SID: SID, gsessionid: GS, RID: rid++, VER: 8, CVER: 1, auth_failure_option: "send_error" }), data,
+          return post(API + "/bc/bind?" + form({ name: "iPhone remote", loungeIdToken: token, SID: SID, AID: aid, gsessionid: GS, device: "REMOTE_CONTROL", app: "youtube-desktop", v: 2, RID: rid++, VER: 8, auth_failure_option: "send_error" }), data,
                       { "X-YouTube-LoungeId-Token": token });
         };
         var r = await send();
@@ -483,7 +487,7 @@ const HTML = String.raw`<!doctype html>
       // Say what the TV has told us, so it is clear why a skip did or did not happen.
       var info = !st.adSeen ? "the TV has sent no advert info" : !st.ad ? "the TV says no advert is playing"
                : st.canSkip ? "advert can be skipped" : "advert can't be skipped yet, will skip when allowed";
-      toast("Skip sent: " + info);
+      toast("Skip sent: " + info + ". (TV updates: " + heard + "; latest: " + (recent.join(", ") || "none") + ")");
       if (st.ad && !st.canSkip) st.wantSkip = true;
       trySkip(); draw();
     },
