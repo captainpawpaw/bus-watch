@@ -86,6 +86,7 @@ async function relayVolume(wv, state) {
     let err = "";
     if (msg.t === "tv" && /^(VOLUP|VOLDOWN|MUTE|POWER)$/.test(msg.key || "")) err = await tvKey(msg.key);
     else if (msg.t === "wake") err = await wake(msg.fire, msg.v);
+    else if (msg.t === "cfg" && msg.cfg && typeof msg.cfg === "object") { try { fm.writeString(CFG_PATH, JSON.stringify(msg.cfg)); } catch (e) {} }
     if (err && state.open) { try { await wv.evaluateJavaScript("toast(" + JSON.stringify(err) + "); 1"); } catch (e) {} }
   }
 }
@@ -284,7 +285,11 @@ const HTML = String.raw`<!doctype html>
   var CFG = __CFG__;
   try { if (!CFG.screenId) { var saved = JSON.parse(localStorage.getItem("ytRemoteCfg") || "{}"); if (saved.screenId) CFG = saved; } } catch (e) {}
   if (!CFG.deviceId) CFG.deviceId = "r" + Math.random().toString(36).slice(2) + Date.now().toString(36);
-  function saveCfg() { try { localStorage.setItem("ytRemoteCfg", JSON.stringify(CFG)); } catch (e) {} }
+  var tvq = [];
+  function saveCfg() {
+    try { localStorage.setItem("ytRemoteCfg", JSON.stringify(CFG)); } catch (e) {}
+    tvq.push(JSON.stringify({ t: "cfg", cfg: CFG })); window.dispatchEvent(new Event("tvkey"));
+  }
   saveCfg();
 
   var $ = function (id) { return document.getElementById(id); };
@@ -446,7 +451,6 @@ const HTML = String.raw`<!doctype html>
                       return (h ? h + ":" + (m < 10 ? "0" : "") : "") + m + ":" + (x < 10 ? "0" : "") + x; }
   function seekTo(t) { t = Math.max(0, st.dur ? Math.min(t, st.dur - 1) : t); st.time = t; st.at = Date.now(); draw(); cmd("seekTo", { newTime: Math.floor(t) }); }
   // Volume goes to the TV set itself. The script outside this page collects these and sends them on.
-  var tvq = [];
   function home(msg) { if (tvq.length < 3) { tvq.push(JSON.stringify(msg)); window.dispatchEvent(new Event("tvkey")); } }
   function tv(key) { home({ t: "tv", key: key }); }
 
@@ -835,11 +839,16 @@ if (config.runsInWidget) {
     await wv.present(true);
     state.open = false;
 
-    // After Close: keep the TV link for next time. If the page had gone off to the sign-in screen, reopen the remote.
+    // After Close: if the page had gone off to the sign-in screen, reopen the remote. Settings are already saved.
+    // The closed page may never answer, so give it two seconds at most; otherwise the script would keep running.
     let out = "";
-    try { out = await wv.evaluateJavaScript("document.title === 'YT Remote' ? JSON.stringify(CFG) : 'away'"); } catch (e) {}
+    try {
+      out = await Promise.race([
+        wv.evaluateJavaScript("document.title === 'YT Remote' ? 'remote' : 'away'"),
+        new Promise((ok) => Timer.schedule(2000, false, () => ok("timeout"))),
+      ]);
+    } catch (e) {}
     if (out === "away") continue;
-    try { const next = JSON.parse(out); if (next && typeof next === "object") fm.writeString(CFG_PATH, JSON.stringify(next)); } catch (e) {}
     break;
   }
 }
