@@ -343,7 +343,8 @@ const HTML = String.raw`<!doctype html>
     } else if (name === "onVolumeChanged") { st.vol = parseInt(arg.volume, 10); draw(); }
     else if (name === "onAdStateChange" || name === "adPlaying") {
       // adState "0" means the advert has finished. isSkipEnabled turns "true" once YouTube allows skipping.
-      st.ad = name === "adPlaying" || String(arg.adState) !== "0";
+      // adState "0" = no advert, "1082" = advert just skipped.
+      st.ad = name === "adPlaying" || !/^(0|1082)$/.test(String(arg.adState));
       st.canSkip = st.ad && String(arg.isSkipEnabled) === "true";
       if (!st.ad) st.wantSkip = false;
       st.adSeen = true;
@@ -363,8 +364,11 @@ const HTML = String.raw`<!doctype html>
     if (!token) await refreshToken();
     rid = 1; ofs = 0; aid = 0; SID = ""; GS = "";
     var q = form({ RID: rid++, VER: 8, CVER: 1, auth_failure_option: "send_error" });
-    var body = { app: "web", "mdx-version": "3", name: "iPhone remote", id: CFG.deviceId, device: "REMOTE_CONTROL",
-                 capabilities: "que,dsdtr,atp,vsp", method: "setPlaylist", magnaKey: "cloudPairedDevice", ui: "false", theme: "cl", loungeIdToken: token };
+    // Introduce ourselves the way the YouTube iPhone app does. The TV only reports adverts to remotes like that.
+    var body = { id: CFG.deviceId, "mdx-version": "3", TYPE: "xmlhttp", theme: "cl", sessionSource: "MDX_SESSION_SOURCE_UNKNOWN",
+                 connectParams: '{"setStatesParams": "{"playbackSpeed":0}"}', RID: "1", CVER: "1", capabilities: "que,dsdtr,atp,vsp",
+                 ui: "false", app: "ytios-phone-20.15.1", pairing_type: "manual", VER: "8", loungeIdToken: token,
+                 device: "REMOTE_CONTROL", name: "iPhone remote" };
     var r = await post(API + "/bc/bind?" + q, body, { "X-YouTube-LoungeId-Token": token });
     if (r.status === 401) { token = ""; await refreshToken(); body.loungeIdToken = token; r = await post(API + "/bc/bind?" + q, body, { "X-YouTube-LoungeId-Token": token }); }
     if (!r.ok) throw new Error("bind " + r.status);
