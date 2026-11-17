@@ -457,14 +457,8 @@ const HTML = String.raw`<!doctype html>
     cmd("setPlaylist", { videoId: id, currentTime: 0, currentIndex: -1, audioOnly: "false", listId: "" });
   }
 
-  // Ask YouTube to skip. If the advert is still there shortly after (or the TV tells us nothing about adverts),
-  // press OK on the TV instead, which is how its own Skip button is pressed.
-  var skipT;
-  function trySkip() {
-    cmd("skipAd");
-    clearTimeout(skipT);
-    skipT = setTimeout(function () { if (!st.adSeen || (st.ad && st.canSkip)) cmd("dpadCommand", { key: "ENTER" }); }, 1500);
-  }
+  // Ask YouTube to skip. (Pressing OK as a fallback only brought up the TV's on-screen controls, so it is gone.)
+  function trySkip() { cmd("skipAd"); }
 
   var actions = {
     pp: function () { if (st.state === 1) { st.time = nowTime(); st.state = 2; cmd("pause"); } else { st.at = Date.now(); st.state = 1; cmd("play"); } draw(); },
