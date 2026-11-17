@@ -121,7 +121,7 @@ const HTML = String.raw`<!doctype html>
   #now { display:flex; gap:10px; align-items:center; margin-top:10px; background:var(--key); border-radius:16px; padding:8px; min-height:66px; }
   #now img { width:72px; height:41px; border-radius:8px; object-fit:cover; background:#000; flex:none; }
   #now div { min-width:0; flex:1; }
-  #now b { display:block; font-size:14px; line-height:1.25; max-height:2.5em; overflow:hidden; }
+  #now b { display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; font-size:14px; line-height:1.25; overflow:hidden; }
   #now span { font-size:12px; color:var(--muted); font-weight:500; }
   #now button { width:46px; height:46px; border-radius:50%; flex:none; background:var(--key2); font-size:20px; }
   #now .pw { background:var(--accent); }
@@ -171,7 +171,8 @@ const HTML = String.raw`<!doctype html>
   .vid.watched img { opacity:.45; }
   .vid.watched b { color:var(--muted); }
   .vid .tx { flex:1; min-width:0; }
-  .vid b { display:block; font-size:14px; line-height:1.25; max-height:2.5em; overflow:hidden; }
+  .vid b { display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; font-size:14px; line-height:1.25; overflow:hidden; }
+  .vid b.full, #nowtitle.full { -webkit-line-clamp:unset; display:block; max-height:none; }
   .vid span { display:block; margin-top:3px; font-size:12px; color:var(--muted); font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .vid button { width:40px; height:40px; border-radius:50%; font-size:20px; flex:none; }
   .vid.sent b { color:var(--accent); }
@@ -521,6 +522,7 @@ const HTML = String.raw`<!doctype html>
   // Drag anywhere along the bar; the video jumps when you let go.
   var drag = null;
   function barTime(x) { var r = $("bar").getBoundingClientRect(); return Math.max(0, Math.min(1, (x - r.left) / r.width)) * st.dur; }
+  $("nowtitle").addEventListener("click", function () { this.classList.toggle("full"); });
   $("bar").addEventListener("touchstart", function (e) { if (!st.dur) return; e.preventDefault(); drag = barTime(e.touches[0].clientX); this.classList.add("drag"); draw(); }, { passive: false });
   $("bar").addEventListener("touchmove", function (e) {
     if (drag === null) return;
@@ -685,6 +687,8 @@ const HTML = String.raw`<!doctype html>
       var d = document.createElement("div"), b = document.createElement("b"), s = document.createElement("span");
       d.className = "tx";
       b.textContent = v.title; s.textContent = v.by || "";
+      // Tapping the title shows it in full (tap again to shorten). Tapping anywhere else plays the video.
+      b.addEventListener("click", function (e) { e.stopPropagation(); b.classList.toggle("full"); });
       var w = document.createElement("span");
       w.textContent = [v.when, v.pct > 0 && !watched ? "Part watched" : ""].filter(Boolean).join(" · ");
       d.appendChild(b); if (v.by) d.appendChild(s); if (w.textContent) d.appendChild(w);
