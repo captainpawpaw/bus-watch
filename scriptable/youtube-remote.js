@@ -191,6 +191,8 @@ const HTML = String.raw`<!doctype html>
   .set div { display:flex; gap:8px; }
   .set input { background:var(--bg); }
   .set .wide { width:100%; background:var(--key2); }
+  #tvlog { margin:0; max-height:340px; overflow:auto; font:500 11px/1.35 ui-monospace, Menlo, monospace; color:var(--fg); white-space:pre-wrap; word-break:break-all;
+           user-select:text; -webkit-user-select:text; }
 
   #toast { position:fixed; left:50%; bottom:calc(84px + env(safe-area-inset-bottom)); transform:translateX(-50%); background:#3a1512; color:#ffb4ad;
            padding:10px 16px; border-radius:12px; font-size:13px; opacity:0; transition:opacity .2s; pointer-events:none; max-width:90%; text-align:center; }
@@ -260,6 +262,10 @@ const HTML = String.raw`<!doctype html>
   <div class="set">
     <p id="firemsg">Fire Stick address, so START can open YouTube on it. On the Fire Stick: Settings &gt; My Fire TV &gt; About &gt; Network.</p>
     <div><input id="fire" inputmode="decimal" placeholder="192.168.1.x" autocomplete="off"><button id="firesave">Save</button></div>
+  </div>
+  <div class="set">
+    <p>TV messages, newest first. If Skip Ad fails, take a screenshot of this during an advert and send it.</p>
+    <pre id="tvlog"></pre>
   </div>
   <div class="set">
     <p id="signmsg">Sign in to YouTube to see your own suggestions and subscriptions. When you have signed in, tap Close (top left) and the remote reopens.</p>
@@ -346,8 +352,16 @@ const HTML = String.raw`<!doctype html>
 
   // A short record of what the TV has been telling us, shown when Skip Ad is pressed.
   var heard = 0, recent = [];
+  var tvlog = [];
   function onEvent(name, arg, all) {
     heard++;
+    if (name !== "noop") {
+      var d = new Date(), hh = function (n) { return (n < 10 ? "0" : "") + n; };
+      var detail = ""; try { detail = typeof arg === "string" ? arg : JSON.stringify(arg); } catch (e) {}
+      tvlog.unshift(hh(d.getHours()) + ":" + hh(d.getMinutes()) + ":" + hh(d.getSeconds()) + "  " + name + (detail && detail !== "{}" ? "  " + detail.slice(0, 160) : ""));
+      if (tvlog.length > 80) tvlog.pop();
+      if ($("tvlog") && $("v-set").classList.contains("on")) showLog();
+    }
     if (name !== "noop" && recent[recent.length - 1] !== name) { recent.push(name); if (recent.length > 4) recent.shift(); }
     if (name === "c") SID = arg;
     else if (name === "S") GS = arg;
@@ -494,7 +508,7 @@ const HTML = String.raw`<!doctype html>
       // Say what the TV has told us, so it is clear why a skip did or did not happen.
       var info = !st.adSeen ? "the TV has sent no advert info" : !st.ad ? "the TV says no advert is playing"
                : st.canSkip ? "advert can be skipped" : "advert can't be skipped yet, will skip when allowed";
-      toast("Skip sent: " + info + ". (TV updates: " + heard + "; latest: " + (recent.join(", ") || "none") + ")");
+      toast("Skip sent: " + info + ". (TV updates: " + heard + ". Full list: gear button.)");
       if (st.ad && !st.canSkip) st.wantSkip = true;
       trySkip(); draw();
     },
@@ -774,7 +788,9 @@ const HTML = String.raw`<!doctype html>
 
   /* ===================== TABS AND SETTINGS ===================== */
 
+  function showLog() { $("tvlog").textContent = tvlog.length ? tvlog.join("\n") : "Nothing from the TV yet."; }
   function show(tab) {
+    if (tab === "set") showLog();
     document.querySelectorAll("nav button").forEach(function (b) { b.classList.toggle("on", b.dataset.tab === tab); });
     document.querySelectorAll(".view").forEach(function (v) { v.classList.toggle("on", v.id === "v-" + tab); });
     $("mini").classList.toggle("on", tab === "home" || tab === "subs" || tab === "hist" || tab === "search");
