@@ -396,13 +396,15 @@ const HTML = String.raw`<!doctype html>
     listen();
   }
 
-  // Keeps a line open so the TV can tell us what is playing.
+  // Keeps a line open so the TV can tell us what is playing. CI=1 asks YouTube to end each reply as soon as it has
+  // news, rather than keeping one reply open for minutes: the phone was holding those long replies back, so news
+  // (such as "an advert has started") never reached the remote in time.
   async function listen() {
     if (listenCtl) listenCtl.abort();
     var ctl = listenCtl = new AbortController(), mySID = SID;
     while (linked && SID === mySID && !ctl.signal.aborted) {
       try {
-        var r = await fetch(API + "/bc/bind?" + form({ name: "iPhone remote", loungeIdToken: token, SID: SID, AID: aid, gsessionid: GS, device: "REMOTE_CONTROL", app: "youtube-desktop", v: 2, RID: "rpc", VER: 8, CI: 0, TYPE: "xmlhttp",
+        var r = await fetch(API + "/bc/bind?" + form({ name: "iPhone remote", loungeIdToken: token, SID: SID, AID: aid, gsessionid: GS, device: "REMOTE_CONTROL", app: "youtube-desktop", v: 2, RID: "rpc", VER: 8, CI: 1, TYPE: "xmlhttp",
                             auth_failure_option: "send_error" }), { signal: ctl.signal, headers: { "X-YouTube-LoungeId-Token": token } });
         if (!r.ok) { if (SID === mySID) { linked = false; start(); } return; }
         var feed = makeParser(onEvent), reader = r.body.getReader();
