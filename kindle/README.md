@@ -10,7 +10,7 @@ Turns an old e-ink Kindle into a wall dashboard showing:
 
 ![Example dashboard](example.png)
 
-Made for the basic Kindle (8th generation, 6", 600 × 800). It works in two parts:
+Made for the basic Kindle (8th generation, 6", 600 × 800), upright or on its side (`ORIENTATION`). It works in two parts:
 
 1. **A small web service on Vercel (free)** gathers the data and draws it as a grey-scale picture.
    Your keys and passwords stay in Vercel's settings, never on the Kindle or in this repo.
@@ -35,6 +35,7 @@ Any section you don't set up is left out, and the buses get the space.
 | `DRIVE_TO`, `DRIVE_LABEL` | Optional: one journey shown all day instead | Postcode or `latitude,longitude`, and a name |
 | `DRIVE_MAP` | Optional. A small map of the route is shown beside the drive time; set `off` to hide it and give the buses more room. | `off` |
 | `SCREENSAVER` | Optional. Hours the Kindle shows the big-clock screensaver; a tap wakes it. Default `00:00-06:00`. | e.g. `22:30-06:00`, or `off` |
+| `ORIENTATION` | Optional. `portrait` (the default), `landscape-right` (Kindle on its side, charging port on the right) or `landscape-left` (port on the left). Landscape puts the clock and weather in a column on the left. | e.g. `landscape-right` |
 | `GLOW_USERNAME`, `GLOW_PASSWORD` | Your smart meter, via the free **Bright** app (works with any UK supplier) | Install Bright (by Hildebrand), sign up and link your meter. Use that email and password. |
 | `TFL_APP_KEY` | Optional. Only needed if TfL starts refusing requests. | api-portal.tfl.gov.uk |
 | `TIMEZONE` | Optional. Defaults to `Europe/London`. | |

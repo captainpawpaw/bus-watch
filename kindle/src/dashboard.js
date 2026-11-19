@@ -5,7 +5,7 @@ import { getBuses } from "./buses.js";
 import { getDrive, hasDrives } from "./driving.js";
 import { getEnergy } from "./energy.js";
 import { renderSvg, WIDTH, HEIGHT } from "./render.js";
-import { greyPng } from "./png.js";
+import { greyPng, rotate } from "./png.js";
 import { tz, localParts } from "./util.js";
 
 const settle = (configured, fn) => configured
@@ -13,6 +13,15 @@ const settle = (configured, fn) => configured
   : Promise.resolve({ ok: false, missing: true, error: new Error("not set up") });
 
 export const hasEnergy = env => !!(env.GLOW_USERNAME && env.GLOW_PASSWORD);
+
+// ORIENTATION: "portrait" (the default), "landscape-right" (Kindle on its side with
+// the charging port on the right) or "landscape-left" (port on the left).
+export function orientation(env) {
+  const o = String(env.ORIENTATION || "portrait").trim().toLowerCase();
+  if (o === "landscape-right" || o === "landscape") return { landscape: true, turn: "cw" };
+  if (o === "landscape-left") return { landscape: true, turn: "ccw" };
+  return { landscape: false, turn: null };
+}
 
 // Screensaver hours, e.g. SCREENSAVER="00:00-06:00" (the default) or "22:30-06:00",
 // or "off". Times are in the dashboard's time zone and can cross midnight.
@@ -40,16 +49,18 @@ export async function buildSvg(env, now = new Date(), page = 1, { single = true 
   ]);
   // A drive outside its days and hours is left out, like one that isn't set up.
   const drive = car.ok && car.value === null ? { ok: false, missing: true } : car;
-  return renderSvg({ now, zone: tz(env), weather, bus, car: drive, power, page });
+  return renderSvg({ now, zone: tz(env), weather, bus, car: drive, power, page, landscape: orientation(env).landscape });
 }
 
-export async function svgToPng(svg, Resvg, fonts) {
+// turn: "cw" or "ccw" to rotate a landscape picture for the Kindle (see png.js).
+export async function svgToPng(svg, Resvg, fonts, turn = null) {
   const resvg = new Resvg(svg, {
-    fitTo: { mode: "width", value: WIDTH },
     font: { fontBuffers: fonts, loadSystemFonts: false, defaultFontFamily: "Inter" },
   });
   const img = resvg.render();
-  const png = await greyPng(img.pixels, img.width, img.height);
+  let { pixels, width, height } = img;
+  if (turn) ({ pixels, width, height } = rotate(pixels, width, height, turn));
+  const png = await greyPng(pixels, width, height);
   img.free?.();
   resvg.free?.();
   return png;
@@ -86,7 +97,10 @@ export async function handle(request, env, { Resvg, fonts }) {
   if (url.pathname.endsWith(".svg") || url.searchParams.get("format") === "svg") {
     return new Response(svg, { headers: { "content-type": "image/svg+xml", "cache-control": "no-store" } });
   }
-  const png = await svgToPng(svg, Resvg, fonts);
+  // The Kindle needs a landscape picture turned on its side; ?upright=1 (used by
+  // the browser view) leaves it the right way up.
+  const turn = url.searchParams.get("upright") === "1" ? null : orientation(env).turn;
+  const png = await svgToPng(svg, Resvg, fonts, turn);
   return new Response(png, { headers: { "content-type": "image/png", "cache-control": "no-store" } });
 }
 
@@ -97,7 +111,7 @@ export async function handle(request, env, { Resvg, fonts }) {
 // PNGs, not the SVG: they have the dashboard's font built in, so they look
 // exactly like the Kindle (browsers don't have Inter and fall back to Times).
 function viewerPage(key) {
-  const base = `/dashboard.png?key=${encodeURIComponent(key)}`;
+  const base = `/dashboard.png?key=${encodeURIComponent(key)}&upright=1`;
   return `<!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8">

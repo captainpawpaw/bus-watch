@@ -2,10 +2,12 @@
 // Settings come from a .env file in this folder (same names as on Vercel).
 //   npm run preview            -> live data
 //   npm run preview -- --demo  -> made-up data, no keys needed
-//   add --page 2 for the energy page (--page 1 for the bus page)
+//   add --page 2 for the energy page (--page 1 for the bus page, --page 0 for the screensaver)
+//   add --landscape to draw it on its side (as ORIENTATION=landscape-right does),
+//   and --kindle to save it turned the way the Kindle receives it
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { buildSvg, svgToPng } from "../src/dashboard.js";
+import { buildSvg, svgToPng, orientation } from "../src/dashboard.js";
 import { renderSvg } from "../src/render.js";
 import { loadAssets } from "../src/assets.js";
 
@@ -21,12 +23,13 @@ if (existsSync(here("../.env"))) {
 
 const { Resvg, fonts } = await loadAssets();
 
+if (process.argv.includes("--landscape")) env.ORIENTATION = "landscape-right";
 const pageArg = process.argv.indexOf("--page");
 const page = pageArg > 0 ? Number(process.argv[pageArg + 1]) : null;
 const svg = process.argv.includes("--demo") ? demoSvg(page ?? 1, page === null)
   : await buildSvg(env, new Date(), page ?? 1, { single: page === null });
 const t = performance.now();
-const png = await svgToPng(svg, Resvg, fonts);
+const png = await svgToPng(svg, Resvg, fonts, process.argv.includes("--kindle") ? orientation(env).turn : null);
 console.log(`Rendered in ${Math.round(performance.now() - t)} ms, ${png.length} bytes`);
 writeFileSync(here("../preview.png"), png);
 console.log("Wrote preview.png");
@@ -36,7 +39,7 @@ function demoSvg(page, single) {
   const at = m => new Date(now.getTime() + m * 60000);
   const bus = (route, towards, mins) => ({ route, towards, buses: mins.map(m => ({ mins: m, at: at(m) })) });
   return renderSvg({
-    now, zone: "Europe/London", page,
+    now, zone: "Europe/London", page, landscape: orientation(env).landscape,
     weather: { ok: true, value: {
       now: { temp: 11.4, feels: 9.2, code: 2, wind: 9, day: true },
       today: { max: 13, min: 6 }, tomorrow: { code: 61, max: 12, min: 7, rain: 70 },
