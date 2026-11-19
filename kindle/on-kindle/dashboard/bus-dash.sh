@@ -61,6 +61,30 @@ fetch_page() {
 
 show() {
   if [ "$2" = full ]; then eips -f -g "$1" >/dev/null 2>&1; else eips -g "$1" >/dev/null 2>&1; fi
+  # Keep the "no connection" warning on screen while it applies.
+  [ -n "$WARNING" ] && eips 1 1 "$WARNING" >/dev/null 2>&1
+}
+
+# With the Kindle's own software stopped, nothing reconnects Wi-Fi when it drops,
+# so ask for it here: first a gentle "be on", and after a few failed minutes in a
+# row, switch it off and on again.
+reconnect_wifi() {
+  log "download failed ($fails in a row): reconnecting Wi-Fi"
+  if [ $((fails % 5)) -eq 0 ]; then
+    lipc-set-prop com.lab126.wifid enable 0 >/dev/null 2>&1
+    sleep 3
+  fi
+  lipc-set-prop com.lab126.cmd wirelessEnable 1 >/dev/null 2>&1
+  lipc-set-prop com.lab126.wifid enable 1 >/dev/null 2>&1
+  # Give it up to WIFI_WAIT_SECONDS (default 30) to connect.
+  i=0
+  while [ $i -lt $((${WIFI_WAIT_SECONDS:-30} / 2)) ]; do
+    state=$(lipc-get-prop com.lab126.wifid cmState 2>/dev/null)
+    [ "$state" = CONNECTED ] && sleep 2 && return 0
+    sleep 2
+    i=$((i + 1))
+  done
+  return 1
 }
 
 lipc-set-prop com.lab126.powerd preventScreenSaver 1 >/dev/null 2>&1
@@ -74,6 +98,10 @@ else
 fi
 
 echo 0 >"$TAP_FILE"
+fails=0
+last_ok=$(date +%s)
+last_ok_hm=$(date +%H:%M)
+WARNING=""
 last_min=""
 shown=""
 count=$FULL_REFRESH_EVERY # so the first picture is a full, clean refresh
@@ -87,7 +115,18 @@ while true; do
   # New pictures at the start of each minute, so the clock stays right.
   if [ "$min" != "$last_min" ]; then
     last_min=$min
-    fetch_page 1 && fresh=1
+    if fetch_page 1 || { fails=$((fails + 1)); reconnect_wifi; fetch_page 1; }; then
+      fresh=1
+      if [ "$fails" -gt 0 ]; then log "connected again after $fails failed minute(s)"; fi
+      fails=0
+      last_ok=$now
+      last_ok_hm=$(date +%H:%M)
+      [ -n "$WARNING" ] && { WARNING=""; count=$FULL_REFRESH_EVERY; } # full refresh clears the warning
+    elif [ $((now - last_ok)) -ge 180 ] && [ -z "$WARNING" ]; then
+      # The picture on screen is out of date: say so, so stale bus times aren't trusted.
+      WARNING="No connection since $last_ok_hm, retrying"
+      eips 1 1 "$WARNING" >/dev/null 2>&1
+    fi
     if fetch_page 2; then
       fresh=1
     elif [ -f "$TMP/page2.png" ]; then
