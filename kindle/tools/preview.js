@@ -52,7 +52,7 @@ function demoSvg(page, single) {
       { name: "Strand", letter: "", routes: [bus("9", "Aldwych", [0, 12])] },
     ] },
     car: { ok: true, value: {
-      label: "Langdon Academy", minutes: 27, usualMinutes: 19, delayMinutes: 8, miles: 9.4, arrival: at(27),
+      label: "Langdon Academy", from: "Home", minutes: 27, usualMinutes: 19, delayMinutes: 8, miles: 9.4, arrival: at(27),
       incidents: [
         { kind: "Roadworks", road: "A4", where: "Cromwell Road to Earls Court Road", severity: 2 },
         { kind: "Queue", road: "A3", where: "Wandsworth Bridge Roundabout", severity: 3 },

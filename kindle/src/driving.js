@@ -139,6 +139,8 @@ export async function getDrive(env, now = new Date()) {
 
   return {
     label: journey.label,
+    // Where the drive starts, for the heading ("Home → Langdon Academy").
+    from: env.DRIVE_FROM_LABEL || "Home",
     map,
     minutes: Math.round(s.travelTimeInSeconds / 60),
     // "Usually" is TomTom's typical time for this time of day (from past traffic),
