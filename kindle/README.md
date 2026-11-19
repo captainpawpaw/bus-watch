@@ -97,7 +97,10 @@ Kindle's own screen and starts `bus-dash.sh`, which:
 - shows a **screensaver** (big clock and a little weather) during screensaver hours, midnight to
   06:00 unless you set `SCREENSAVER` in Vercel (e.g. `22:30-06:00`, or `off`). A tap or swipe wakes the
   bus page for 5 minutes;
-- does a full (flashing) refresh now and then to clear e-ink ghosting.
+- does a full (flashing) refresh now and then to clear e-ink ghosting;
+- reconnects Wi-Fi if it drops (nothing else does while the Kindle's own software is off), and if
+  there's been no connection for 3 minutes, shows "No connection since HH:MM, retrying" at the top so
+  out-of-date bus times aren't trusted.
 
 These timings are in `local/env.sh`. kindle-dash is still needed for its download tool (`xh`); its own
 update loop isn't used. The Kindle stays awake the whole time, so **keep it plugged in**.
