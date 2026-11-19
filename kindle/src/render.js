@@ -122,53 +122,83 @@ function forecast(weather) {
   return out + line(298);
 }
 
-function buses(result, zone, top, bottom) {
+// The bus section between top and bottom. Returns { svg, end }, end being where
+// it finished. opt.left/opt.right set the edges (portrait margins by default);
+// opt.big draws everything larger and shows the next two buses per route.
+function buses(result, zone, top, bottom, opt = {}) {
+  const L = opt.left ?? M, R = opt.right ?? RIGHT, W = R - L, big = !!opt.big;
+  const z = big
+    ? { stop: 21, badge: 30, badgeH: 46, badgeW: 88, to: 18, times: 17, mins: 42, row: 80, leave: 19, count: 3 }
+    : { stop: 19, badge: 24, badgeH: 38, badgeW: 76, to: 18, times: 15, mins: 28, row: 50, leave: 16, count: 3 };
   let y = top + 22;
-  if (!result.ok) return heading(y, "Buses") + unavailable(y + 30, "Bus times", result.error);
-  let out = heading(y, "Buses");
+  const heading = s => text(L, y, s.toUpperCase(), { size: 15, bold: true, fill: GREY });
+  if (!result.ok) {
+    return { svg: heading("Buses") + text(L, y + 30, `Bus times unavailable: ${result.error?.message || result.error}`,
+      { size: 16, fill: GREY, max: W }), end: y + 40 };
+  }
+  let out = heading("Buses");
   // Of the buses you can still catch at each stop, the one you need to set off
   // for first. The clock time stays right even if the picture is a few minutes old.
   const leave = result.value.map(s => s.leave).filter(Boolean).sort((a, b) => a.at - b.at)[0];
   if (leave) {
     // Which bus it means, and how far away that bus is.
     const bus = `${leave.route} due in ${leave.busMins} min`;
-    out += text(RIGHT, y, leave.inMins <= 0 ? `Leave now · ${bus}`
-      : `Leave in ${leave.inMins} min (${clock(leave.at, zone)}) · ${bus}`,
-      { size: 16, bold: true, anchor: "end" });
+    const advice = leave.inMins <= 0 ? `Leave now · ${bus}`
+      : `Leave in ${leave.inMins} min (${clock(leave.at, zone)}) · ${bus}`;
+    if (big) {
+      // Its own line, so it's never cut short.
+      y += 28;
+      out += text(L, y, advice, { size: z.leave, bold: true, max: W });
+    } else {
+      out += text(R, y, advice, { size: z.leave, bold: true, anchor: "end", max: W - 70 });
+    }
   }
   y += 10;
 
   for (const stop of result.value) {
     // Only start a stop if its name and at least one bus row fit.
-    if (y + 32 + 50 > bottom) break;
-    y += 26;
-    out += text(M, y, stop.letter ? `${stop.name} (stop ${stop.letter})` : stop.name, { size: 19, bold: true, max: WIDTH - 2 * M });
+    if (y + 32 + z.row > bottom) break;
+    y += z.stop + 7;
+    const letter = stop.letter ? (big ? ` (${stop.letter})` : ` (stop ${stop.letter})`) : "";
+    // (The width estimate is cautious; bold Inter names really fit about 10% more.)
+    out += text(L, y, stop.name + letter, { size: z.stop, bold: true, max: big ? W * 1.1 : W });
     y += 6;
     if (!stop.routes.length) {
       y += 26;
-      out += text(M, y, stop.error ? `Couldn't load this stop: ${stop.error}` : "No buses due",
-        { size: stop.error ? 16 : 18, fill: GREY, max: WIDTH - 2 * M });
+      out += text(L, y, stop.error ? `Couldn't load this stop: ${stop.error}` : "No buses due",
+        { size: stop.error ? 16 : 18, fill: GREY, max: W });
       y += 10;
       continue;
     }
     for (const r of stop.routes) {
-      if (y + 52 > bottom) break;
+      if (y + z.row + 2 > bottom) break;
+      const shown = r.buses.slice(0, z.count);
       const rowTop = y + 6;
-      const badgeW = Math.max(76, textWidth(r.route, 24, true) + 18);
-      out += `<rect x="${M}" y="${rowTop}" width="${badgeW}" height="38" rx="6" fill="#000"/>`;
-      out += text(M + badgeW / 2, rowTop + 28, r.route, { size: 24, bold: true, fill: "#fff", anchor: "middle" });
+      const badgeW = Math.max(z.badgeW, textWidth(r.route, z.badge, true) + 18);
+      out += `<rect x="${L}" y="${rowTop}" width="${badgeW}" height="${z.badgeH}" rx="6" fill="#000"/>`;
+      out += text(L + badgeW / 2, rowTop + z.badgeH * 0.74, r.route, { size: z.badge, bold: true, fill: "#fff", anchor: "middle" });
 
-      const mins = r.buses.map(b => (b.mins === 0 ? "Due" : String(b.mins))).join(" · ");
-      const minsText = r.buses[r.buses.length - 1].mins === 0 ? mins : `${mins} min`;
-      const minsW = textWidth(minsText, 28, true);
-      const tx = M + badgeW + 14;
-      out += text(tx, rowTop + 18, `to ${r.towards}`, { size: 18, max: RIGHT - minsW - tx - 12 });
-      out += text(tx, rowTop + 38, r.buses.map(b => clock(b.at, zone)).join(", "), { size: 15, fill: GREY });
-      out += text(RIGHT, rowTop + 31, minsText, { size: 28, bold: true, anchor: "end" });
-      y += 50;
+      const mins = shown.map(b => (b.mins === 0 ? "Due" : String(b.mins))).join(" · ");
+      const minsText = shown[shown.length - 1].mins === 0 ? mins : `${mins} min`;
+      if (big) {
+        // Badge and big minutes on one line; where it's going and the clock times underneath.
+        out += text(R, rowTop + z.badgeH * 0.86, minsText, { size: z.mins, bold: true, anchor: "end" });
+        const times = shown.map(b => clock(b.at, zone)).join(", ");
+        const timesW = textWidth(times, z.times);
+        out += text(L, rowTop + z.badgeH + 24, `to ${r.towards}`, { size: z.to, max: W - timesW - 16 });
+        out += text(R, rowTop + z.badgeH + 24, times, { size: z.times, fill: GREY, anchor: "end" });
+        y += z.row;
+        continue;
+      }
+      const minsW = textWidth(minsText, z.mins, true);
+      const tx = L + badgeW + 14;
+      out += text(tx, rowTop + z.to, `to ${r.towards}`, { size: z.to, max: R - minsW - tx - 12 });
+      out += text(tx, rowTop + z.badgeH, shown.map(b => clock(b.at, zone)).join(", "), { size: z.times, fill: GREY });
+      out += text(R, rowTop + z.badgeH * 0.82, minsText, { size: z.mins, bold: true, anchor: "end" });
+      y += z.row;
     }
   }
-  return out;
+  return { svg: out, end: y };
 }
 
 export const DRIVE_H = 132;
@@ -208,7 +238,8 @@ function drive(result, zone, top) {
   // With a map, the text sits in a column to its left.
   const right = map ? RIGHT - map.w - 14 : RIGHT;
   let out = map ? routeMap(map, RIGHT - map.w, top + 12) : "";
-  out += text(M, y, `Drive · ${d.label}`.toUpperCase(), { size: 15, bold: true, fill: GREY, max: right - M });
+  const title = d.from ? `${d.from} → ${d.label}` : `Drive · ${d.label}`;
+  out += text(M, y, title.toUpperCase(), { size: 15, bold: true, fill: GREY, max: right - M });
 
   const arrive = `Arrive ${clock(d.arrival, zone)}`;
   const delay = d.delayMinutes > 0 ? `+${d.delayMinutes} min traffic`
@@ -370,7 +401,7 @@ function travel(bus, car, power, zone, top, bottom) {
     bottom -= car.ok && car.value.map ? DRIVE_MAP_H : DRIVE_H;
     driveSvg = line(bottom) + drive(car, zone, bottom);
   }
-  return buses(bus, zone, top, bottom) + driveSvg + energySvg;
+  return buses(bus, zone, top, bottom).svg + driveSvg + energySvg;
 }
 
 // Gas and electric stacked, with the back button, from top (portrait coordinates).
@@ -420,6 +451,25 @@ function leftColumn(now, zone, weather) {
   return out;
 }
 
+// Landscape bus page: buses at full size (not scaled down), then the drive and
+// (single-page layout) energy straight underneath, scaled to fit.
+function travelLandscape(bus, car, power, zone) {
+  const showDrive = car.ok || !car.missing;
+  const showEnergy = power && (power.ok || !power.missing);
+  const driveH = showDrive ? (car.ok && car.value.map ? DRIVE_MAP_H : DRIVE_H) * SCALE : 0;
+  const energyH = showEnergy ? 140 * SCALE : 0;
+  const b = buses(bus, zone, 4, L_HEIGHT - driveH - energyH - 6, { left: COL + 18, right: L_WIDTH - 20, big: true });
+  let out = b.svg;
+  let y = b.end + 8;
+  const scaled = (svg, at) => `<g transform="translate(${COL} ${at.toFixed(1)}) scale(${SCALE.toFixed(4)})">${svg}</g>`;
+  if (showDrive) {
+    out += scaled(line(0) + drive(car, zone, 0), y);
+    y += driveH;
+  }
+  if (showEnergy) out += scaled(line(0) + energy(power, 0), y);
+  return out;
+}
+
 function landscapeScreensaver(now, zone, weather) {
   const cx = L_WIDTH / 2;
   let out = text(cx, 230, clock(now, zone), { size: 210, bold: true, anchor: "middle" });
@@ -444,11 +494,10 @@ function landscapeScreensaver(now, zone, weather) {
 function renderLandscape({ now, zone, weather, bus, car, power, page }) {
   if (page === 0) return svgDoc(landscapeScreensaver(now, zone, weather), L_WIDTH, L_HEIGHT);
   const right = page === 2
-    ? energyPage(power, 12, INNER_H - 56)
-    : travel(bus, car, power, zone, 12, INNER_H);
+    ? `<g transform="translate(${COL} 0) scale(${SCALE.toFixed(4)})">${energyPage(power, 12, INNER_H - 56)}</g>`
+    : travelLandscape(bus, car, power, zone);
   const body = leftColumn(now, zone, weather) +
-    `<line x1="${COL}" y1="${M}" x2="${COL}" y2="${L_HEIGHT - M}" stroke="#000" stroke-width="2"/>` +
-    `<g transform="translate(${COL} 0) scale(${SCALE.toFixed(4)})">${right}</g>`;
+    `<line x1="${COL}" y1="${M}" x2="${COL}" y2="${L_HEIGHT - M}" stroke="#000" stroke-width="2"/>` + right;
   return svgDoc(body, L_WIDTH, L_HEIGHT);
 }
 

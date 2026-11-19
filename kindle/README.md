@@ -32,6 +32,7 @@ Any section you don't set up is left out, and the buses get the space.
 | `TOMTOM_KEY` | Drive time and traffic. Free: 2,500 lookups a day. Each update in a journey's time window uses 2 (so a 90-minute window updated every minute uses about 180). | Sign up at developer.tomtom.com, then copy the key from your dashboard there. |
 | `DRIVE_FROM` | Where your drives start | A UK postcode, e.g. `E6 2PS`, or `latitude,longitude` |
 | `DRIVE_1`, `DRIVE_2`, … | Each journey and when to show it: `days times \| name \| destination`. It shows (and uses TomTom) only during those times. | e.g. `Mon-Fri 06:00-07:30 \| Langdon Academy \| E6 2PS` and `Sat-Sun 18:00-20:00 \| Asda Beckton \| E6 5JP`. Days can also be `Weekdays`, `Weekends`, `Daily` or `Sat,Sun`. To follow your own route instead of the fastest, add `\| via latitude,longitude` parts for points in the middle of roads you take, in order (avoid dual carriageways, where a point can land on the wrong side). |
+| `DRIVE_FROM_LABEL` | Optional. The name of where drives start, shown in the heading ("HOME → LANGDON ACADEMY"). Default `Home`. | e.g. `Home` |
 | `DRIVE_TO`, `DRIVE_LABEL` | Optional: one journey shown all day instead | Postcode or `latitude,longitude`, and a name |
 | `DRIVE_MAP` | Optional. A small map of the route is shown beside the drive time; set `off` to hide it and give the buses more room. | `off` |
 | `SCREENSAVER` | Optional. Hours the Kindle shows the big-clock screensaver; a tap wakes it. Default `00:00-06:00`. | e.g. `22:30-06:00`, or `off` |
