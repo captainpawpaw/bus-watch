@@ -4,6 +4,8 @@
 # Every minute it downloads page 1 (buses) and page 2 (energy), then swaps between
 # them every ROTATE_SECONDS. Tapping the screen goes back to page 1 and stays there
 # for TAP_HOLD_SECONDS. If there's no page 2 (smart meter not set up), it just shows page 1.
+# During screensaver hours (set on the server), the server also offers page 0, a big
+# clock: that shows instead, and a tap wakes the normal pages for TAP_HOLD_SECONDS.
 # Settings are in local/env.sh. Uses kindle-dash's local/fetch-dashboard.sh and xh.
 
 DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -91,15 +93,26 @@ while true; do
     elif [ -f "$TMP/page2.png" ]; then
       rm -f "$TMP/page2.png" # No page 2 (or no connection): stay on page 1.
     fi
+    # Page 0 (the screensaver) only exists during screensaver hours.
+    if fetch_page 0; then
+      fresh=1
+    else
+      rm -f "$TMP/page0.png"
+    fi
   fi
 
-  # Page 1, unless page 2 exists, the screen wasn't tapped recently and it's page 2's turn.
-  want=1
-  if [ -f "$TMP/page2.png" ]; then
-    tap=$(cat "$TAP_FILE" 2>/dev/null)
-    if [ $((now - ${tap:-0})) -ge "$TAP_HOLD_SECONDS" ] && [ $(((now / ROTATE_SECONDS) % 2)) -eq 1 ]; then
-      want=2
-    fi
+  tap=$(cat "$TAP_FILE" 2>/dev/null)
+  idle=1
+  [ $((now - ${tap:-0})) -lt "$TAP_HOLD_SECONDS" ] && idle=0
+
+  # Screensaver when it's that time and nobody has tapped; otherwise page 1, or
+  # page 2 on its turn (not straight after a tap).
+  if [ "$idle" = 1 ] && [ -f "$TMP/page0.png" ]; then
+    want=0
+  elif [ "$idle" = 1 ] && [ -f "$TMP/page2.png" ] && [ $(((now / ROTATE_SECONDS) % 2)) -eq 1 ]; then
+    want=2
+  else
+    want=1
   fi
 
   if [ -f "$TMP/page$want.png" ] && { [ "$want" != "$shown" ] || [ "$fresh" = 1 ]; }; then

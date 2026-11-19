@@ -6,7 +6,7 @@ import { getDrive, hasDrives } from "./driving.js";
 import { getEnergy } from "./energy.js";
 import { renderSvg, WIDTH, HEIGHT } from "./render.js";
 import { greyPng } from "./png.js";
-import { tz } from "./util.js";
+import { tz, localParts } from "./util.js";
 
 const settle = (configured, fn) => configured
   ? fn().then(value => ({ ok: true, value }), error => ({ ok: false, error }))
@@ -14,10 +14,23 @@ const settle = (configured, fn) => configured
 
 export const hasEnergy = env => !!(env.GLOW_USERNAME && env.GLOW_PASSWORD);
 
+// Screensaver hours, e.g. SCREENSAVER="00:00-06:00" (the default) or "22:30-06:00",
+// or "off". Times are in the dashboard's time zone and can cross midnight.
+export function isScreensaverTime(env, now = new Date()) {
+  const setting = String(env.SCREENSAVER ?? "00:00-06:00").trim().toLowerCase();
+  if (setting === "off" || setting === "") return false;
+  const m = setting.match(/^(\d{1,2})[:.](\d{2})\s*-\s*(\d{1,2})[:.](\d{2})$/);
+  if (!m) return false;
+  const start = +m[1] * 60 + +m[2], end = +m[3] * 60 + +m[4];
+  const p = localParts(now, tz(env));
+  const mins = +p.hh * 60 + +p.mm;
+  return start <= end ? mins >= start && mins < end : mins >= start || mins < end;
+}
+
 // page 1: clock, weather, buses, drive. page 2: clock, weather, energy.
 // Without ?page (the old single-page layout), energy sits at the bottom of page 1.
 export async function buildSvg(env, now = new Date(), page = 1, { single = true } = {}) {
-  const wantBus = page === 1, wantEnergy = page === 2 || single;
+  const wantBus = page === 1, wantEnergy = page === 2 || (single && page === 1);
   const skip = Promise.resolve({ ok: false, missing: true });
   const [weather, bus, car, power] = await Promise.all([
     settle(true, () => getWeather(env)),
@@ -59,10 +72,15 @@ export async function handle(request, env, { Resvg, fonts }) {
   // ?page=1 or ?page=2. Asking for a page at all means the multi-page layout, so
   // energy moves to page 2; without ?page the single-page layout stays as it was.
   const pageParam = url.searchParams.get("page");
-  const page = pageParam === "2" ? 2 : 1;
+  const page = pageParam === "2" ? 2 : pageParam === "0" ? 0 : 1;
   if (page === 2 && !hasEnergy(env)) {
     // Tells the Kindle there's no page 2 yet, so it just shows page 1.
     return new Response("No page 2: the smart meter isn't set up.", { status: 404 });
+  }
+  // Page 0 is the screensaver. It only exists during screensaver hours, which is
+  // how the Kindle knows when to show it (?force=1 shows it any time, to preview).
+  if (page === 0 && !isScreensaverTime(env) && url.searchParams.get("force") !== "1") {
+    return new Response("Not screensaver time.", { status: 404 });
   }
   const svg = await buildSvg(env, new Date(), page, { single: pageParam === null });
   if (url.pathname.endsWith(".svg") || url.searchParams.get("format") === "svg") {
@@ -74,7 +92,8 @@ export async function handle(request, env, { Resvg, fonts }) {
 
 // A page for phones and computers that works like the Kindle: new pictures just
 // after each minute, swapping between page 1 (buses) and page 2 (energy) every
-// 10 seconds, and a tap or click goes back to page 1 for 5 minutes. It shows the
+// 10 seconds, the screensaver (page 0) during screensaver hours, and a tap or
+// click goes back to page 1 for 5 minutes. It shows the
 // PNGs, not the SVG: they have the dashboard's font built in, so they look
 // exactly like the Kindle (browsers don't have Inter and fall back to Times).
 function viewerPage(key) {
@@ -95,27 +114,29 @@ function viewerPage(key) {
 <script>
   const BASE = ${JSON.stringify(base)}, ROTATE = 10000, HOLD = 300000;
   const img = document.getElementById("dash");
-  const pages = { 1: img.src, 2: null };
+  const pages = { 0: null, 1: img.src, 2: null };
   let tapped = 0, shown = 1;
 
   function load(n) {
     const next = new Image();
     next.onload = () => { pages[n] = next.src; show(true); };
-    next.onerror = () => { if (n === 2) { pages[2] = null; show(); } };
+    next.onerror = () => { if (n !== 1) { pages[n] = null; show(); } };
     next.src = BASE + "&page=" + n + "&t=" + Date.now();
   }
   function show(force) {
     const now = Date.now();
-    const want = pages[2] && now - tapped >= HOLD && Math.floor(now / ROTATE) % 2 === 1 ? 2 : 1;
+    const idle = now - tapped >= HOLD;
+    // Screensaver at night unless tapped; otherwise page 1, or page 2 on its turn.
+    const want = idle && pages[0] ? 0 : idle && pages[2] && Math.floor(now / ROTATE) % 2 === 1 ? 2 : 1;
     if (want !== shown || force) { img.src = pages[want]; shown = want; }
   }
   function refresh() {
-    load(1); load(2);
+    load(0); load(1); load(2);
     // Next pictures 2 seconds after the next minute starts, so the clock stays right.
     setTimeout(refresh, 62000 - (Date.now() % 60000));
   }
   document.body.addEventListener("click", () => { tapped = Date.now(); show(); });
-  load(2);
+  load(0); load(2);
   setTimeout(refresh, 62000 - (Date.now() % 60000));
   setInterval(show, 1000);
 </script>

@@ -34,6 +34,7 @@ Any section you don't set up is left out, and the buses get the space.
 | `DRIVE_1`, `DRIVE_2`, … | Each journey and when to show it: `days times \| name \| destination`. It shows (and uses TomTom) only during those times. | e.g. `Mon-Fri 06:00-07:30 \| Langdon Academy \| E6 2PS` and `Sat-Sun 18:00-20:00 \| Asda Beckton \| E6 5JP`. Days can also be `Weekdays`, `Weekends`, `Daily` or `Sat,Sun`. To follow your own route instead of the fastest, add `\| via latitude,longitude` parts for points in the middle of roads you take, in order (avoid dual carriageways, where a point can land on the wrong side). |
 | `DRIVE_TO`, `DRIVE_LABEL` | Optional: one journey shown all day instead | Postcode or `latitude,longitude`, and a name |
 | `DRIVE_MAP` | Optional. A small map of the route is shown beside the drive time; set `off` to hide it and give the buses more room. | `off` |
+| `SCREENSAVER` | Optional. Hours the Kindle shows the big-clock screensaver; a tap wakes it. Default `00:00-06:00`. | e.g. `22:30-06:00`, or `off` |
 | `GLOW_USERNAME`, `GLOW_PASSWORD` | Your smart meter, via the free **Bright** app (works with any UK supplier) | Install Bright (by Hildebrand), sign up and link your meter. Use that email and password. |
 | `TFL_APP_KEY` | Optional. Only needed if TfL starts refusing requests. | api-portal.tfl.gov.uk |
 | `TIMEZONE` | Optional. Defaults to `Europe/London`. | |
@@ -92,6 +93,9 @@ Kindle's own screen and starts `bus-dash.sh`, which:
   at the start of every minute, so the clock stays right;
 - swaps between them **every 10 seconds** (only page 1 shows until the smart meter is set up);
 - goes back to **page 1 for 5 minutes** when you **tap anywhere** on the screen;
+- shows a **screensaver** (big clock and a little weather) during screensaver hours, midnight to
+  06:00 unless you set `SCREENSAVER` in Vercel (e.g. `22:30-06:00`, or `off`). A tap or swipe wakes the
+  bus page for 5 minutes;
 - does a full (flashing) refresh now and then to clear e-ink ghosting.
 
 These timings are in `local/env.sh`. kindle-dash is still needed for its download tool (`xh`); its own

@@ -316,6 +316,32 @@ function backButton() {
     text(WIDTH / 2 + 12, y + 27, "Tap for buses", { size: 18, bold: true, anchor: "middle" });
 }
 
+// The night screensaver: a big clock, the date and a little weather.
+function screensaver(now, zone, weather) {
+  const cx = WIDTH / 2;
+  let out = text(cx, 250, clock(now, zone), { size: 176, bold: true, anchor: "middle" });
+  const date = new Intl.DateTimeFormat("en-GB", { weekday: "long", day: "numeric", month: "long", timeZone: zone }).format(now);
+  out += text(cx, 312, date, { size: 30, anchor: "middle" });
+  out += line(360, 60, WIDTH - 60);
+
+  if (weather.ok) {
+    const w = weather.value;
+    const [desc, kind] = describe(w.now.code);
+    out += icon(kind, 92, 392, 120, w.now.day);
+    out += text(236, 476, temp(w.now.temp), { size: 96, bold: true });
+    out += text(236, 512, `${desc}, feels ${temp(w.now.feels)}`, { size: 22, max: WIDTH - 236 - M });
+    out += text(cx, 580, `Today: high ${temp(w.today.max)}, low ${temp(w.today.min)} · ${w.today.rain ?? 0}% rain`,
+      { size: 20, fill: GREY, anchor: "middle", max: WIDTH - 2 * M });
+    const [tdesc] = describe(w.tomorrow.code);
+    out += text(cx, 616, `Tomorrow: ${tdesc.toLowerCase() || "—"}, ${temp(w.tomorrow.max)}/${temp(w.tomorrow.min)} · ${w.tomorrow.rain ?? 0}% rain`,
+      { size: 20, fill: GREY, anchor: "middle", max: WIDTH - 2 * M });
+  } else {
+    out += text(cx, 470, "Weather unavailable", { size: 22, fill: GREY, anchor: "middle" });
+  }
+  out += text(cx, HEIGHT - 30, "Tap to wake", { size: 18, fill: GREY, anchor: "middle" });
+  return out;
+}
+
 function svgDoc(body) {
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${WIDTH}" height="${HEIGHT}" viewBox="0 0 ${WIDTH} ${HEIGHT}" font-family="Inter">` +
     `<rect width="100%" height="100%" fill="#fff"/>${body}</svg>`;
@@ -323,6 +349,7 @@ function svgDoc(body) {
 
 // page 1: clock, weather, buses and drive. page 2: clock, weather and energy.
 export function renderSvg({ now, zone, weather, bus, car, power, page = 1 }) {
+  if (page === 0) return svgDoc(screensaver(now, zone, weather));
   const top = header(now, zone, weather) + forecast(weather);
   if (page === 2) {
     let body;
