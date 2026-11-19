@@ -68,3 +68,20 @@ export async function greyPng(rgba, width, height) {
   for (const p of parts) { out.set(p, o); o += p.length; }
   return out;
 }
+
+// Turns a landscape picture so it shows the right way up on a Kindle standing on
+// its side. "cw" (clockwise) is for a Kindle with its charging port on the right,
+// "ccw" for one with the port on the left.
+export function rotate(rgba, width, height, dir) {
+  const out = new Uint8Array(rgba.length);
+  const w2 = height, h2 = width;
+  for (let py = 0; py < h2; py++) {
+    for (let px = 0; px < w2; px++) {
+      const x = dir === "cw" ? py : width - 1 - py;
+      const y = dir === "cw" ? height - 1 - px : px;
+      const i = (y * width + x) * 4, o = (py * w2 + px) * 4;
+      out[o] = rgba[i]; out[o + 1] = rgba[i + 1]; out[o + 2] = rgba[i + 2]; out[o + 3] = rgba[i + 3];
+    }
+  }
+  return { pixels: out, width: w2, height: h2 };
+}

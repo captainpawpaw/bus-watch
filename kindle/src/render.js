@@ -282,11 +282,85 @@ function energy(result, top) {
   return out;
 }
 
-export function renderSvg({ now, zone, weather, bus, car, power }) {
+// Gas and electric for page 2: a big block each with a 7-day chart.
+function energyBlock(name, f, days, top) {
+  let y = top + 24;
+  let out = heading(y, name);
+  if (!f) return out + text(M, y + 32, "No meter found", { size: 18, fill: GREY });
+  const cost = i => (f.pence && f.pence[i] != null ? ` · £${(f.pence[i] / 100).toFixed(2)}` : "");
+  const yest = f.kwh[5], today = f.kwh[6];
+  out += text(M, y + 36, yest == null ? "Yesterday: no data yet" : `Yesterday ${yest.toFixed(1)} kWh${cost(5)}`,
+    { size: 26, bold: true, max: WIDTH - 2 * M });
+  out += text(M, y + 60, today ? `Today so far ${today.toFixed(1)} kWh${cost(6)}` : "Today: no data yet",
+    { size: 17, fill: GREY, max: WIDTH - 2 * M });
+
+  // Last 7 days as bars with their values, yesterday in black.
+  const chartTop = y + 92, chartH = 76, max = Math.max(...f.kwh.map(v => v || 0), 0.1);
+  const barW = (WIDTH - 2 * M) / 7;
+  f.kwh.forEach((v, i) => {
+    const bx = M + i * barW + 8, w = barW - 16, cx = bx + w / 2;
+    const h = v ? Math.max(2, (v / max) * chartH) : 0;
+    if (h) {
+      out += `<rect x="${bx}" y="${chartTop + chartH - h}" width="${w}" height="${h}" fill="${i === 5 ? "#000" : "#999"}"/>`;
+      out += text(cx, chartTop + chartH - h - 5, v.toFixed(v < 10 ? 1 : 0), { size: 13, fill: GREY, anchor: "middle" });
+    }
+    out += text(cx, chartTop + chartH + 18, days[i], { size: 14, fill: GREY, anchor: "middle", bold: i === 5 });
+  });
+  return out;
+}
+
+function backButton(y = HEIGHT - 52, cx = WIDTH / 2) {
+  const w = 220, h = 40, x = cx - w / 2;
+  return `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="20" fill="#fff" stroke="#000" stroke-width="2.5"/>` +
+    `<path d="M${x + 30} ${y + h / 2} l12 -8 v16 z" fill="#000"/>` +
+    text(cx + 12, y + 27, "Tap for buses", { size: 18, bold: true, anchor: "middle" });
+}
+
+const dateText = (now, zone) =>
+  new Intl.DateTimeFormat("en-GB", { weekday: "long", day: "numeric", month: "long", timeZone: zone }).format(now);
+
+const outlook = w => {
+  const [tdesc] = describe(w.tomorrow.code);
+  return [
+    `Today: high ${temp(w.today.max)}, low ${temp(w.today.min)} · ${w.today.rain ?? 0}% rain`,
+    `Tomorrow: ${tdesc.toLowerCase() || "—"}, ${temp(w.tomorrow.max)}/${temp(w.tomorrow.min)} · ${w.tomorrow.rain ?? 0}% rain`,
+  ];
+};
+
+// The night screensaver: a big clock, the date and a little weather.
+function screensaver(now, zone, weather) {
+  const cx = WIDTH / 2;
+  let out = text(cx, 250, clock(now, zone), { size: 176, bold: true, anchor: "middle" });
+  out += text(cx, 312, dateText(now, zone), { size: 30, anchor: "middle" });
+  out += line(360, 60, WIDTH - 60);
+
+  if (weather.ok) {
+    const w = weather.value;
+    const [desc, kind] = describe(w.now.code);
+    out += icon(kind, 92, 392, 120, w.now.day);
+    out += text(236, 476, temp(w.now.temp), { size: 96, bold: true });
+    out += text(236, 512, `${desc}, feels ${temp(w.now.feels)}`, { size: 22, max: WIDTH - 236 - M });
+    const [today, tomorrow] = outlook(w);
+    out += text(cx, 580, today, { size: 20, fill: GREY, anchor: "middle", max: WIDTH - 2 * M });
+    out += text(cx, 616, tomorrow, { size: 20, fill: GREY, anchor: "middle", max: WIDTH - 2 * M });
+  } else {
+    out += text(cx, 470, "Weather unavailable", { size: 22, fill: GREY, anchor: "middle" });
+  }
+  out += text(cx, HEIGHT - 30, "Tap to wake", { size: 18, fill: GREY, anchor: "middle" });
+  return out;
+}
+
+function svgDoc(body, w = WIDTH, h = HEIGHT) {
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" font-family="Inter">` +
+    `<rect width="100%" height="100%" fill="#fff"/>${body}</svg>`;
+}
+
+// Buses, with the drive and (single-page layout) energy at the bottom,
+// between top and bottom, in portrait coordinates (600 wide).
+function travel(bus, car, power, zone, top, bottom) {
   // Sections that aren't configured are left out and the space goes to the buses.
   const showDrive = car.ok || !car.missing;
-  const showEnergy = power.ok || !power.missing;
-  let bottom = HEIGHT;
+  const showEnergy = power && (power.ok || !power.missing);
   let energySvg = "", driveSvg = "";
   if (showEnergy) {
     bottom -= 140;
@@ -296,7 +370,95 @@ export function renderSvg({ now, zone, weather, bus, car, power }) {
     bottom -= car.ok && car.value.map ? DRIVE_MAP_H : DRIVE_H;
     driveSvg = line(bottom) + drive(car, zone, bottom);
   }
-  const body = header(now, zone, weather) + forecast(weather) + buses(bus, zone, 298, bottom) + driveSvg + energySvg;
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${WIDTH}" height="${HEIGHT}" viewBox="0 0 ${WIDTH} ${HEIGHT}" font-family="Inter">` +
-    `<rect width="100%" height="100%" fill="#fff"/>${body}</svg>`;
+  return buses(bus, zone, top, bottom) + driveSvg + energySvg;
+}
+
+// Gas and electric stacked, with the back button, from top (portrait coordinates).
+function energyPage(power, top, buttonY) {
+  if (!power.ok) return heading(top + 22, "Energy") + unavailable(top + 52, "Smart meter", power.error);
+  const e = power.value;
+  return energyBlock("Electric", e.electric, e.days, top) + line(top + 222) +
+    energyBlock("Gas", e.gas, e.days, top + 222) + backButton(buttonY);
+}
+
+// ---------- landscape (800 x 600) ----------
+export const L_WIDTH = 800;
+export const L_HEIGHT = 600;
+const COL = 290; // left column: clock and weather
+// The right-hand side reuses the portrait sections, scaled to fit.
+const SCALE = (L_WIDTH - COL) / WIDTH;
+const INNER_H = L_HEIGHT / SCALE;
+
+function leftColumn(now, zone, weather) {
+  const x = M, w = COL - 2 * M;
+  let out = text(x, 96, clock(now, zone), { size: 86, bold: true });
+  out += text(x + 2, 132, dateText(now, zone), { size: 20, max: w });
+  out += line(154, x, COL - M);
+  if (!weather.ok) return out + text(x, 190, "Weather unavailable", { size: 16, fill: GREY });
+
+  const wv = weather.value;
+  const [desc, kind] = describe(wv.now.code);
+  out += icon(kind, x - 4, 166, 76, wv.now.day);
+  out += text(x + 92, 226, temp(wv.now.temp), { size: 58, bold: true });
+  out += text(x, 268, `${desc}, feels ${temp(wv.now.feels)}`, { size: 17, max: w });
+  out += text(x, 292, `High ${temp(wv.today.max)} · Low ${temp(wv.today.min)} · ${Math.round(wv.now.wind)} mph`,
+    { size: 14, fill: GREY, max: w });
+  out += line(310, x, COL - M);
+
+  // Next hours, one per row, then tomorrow.
+  const rows = [
+    ...wv.hours.slice(0, 4).map(h => ({ label: h.time, code: h.code, day: h.day, t: temp(h.temp), rain: h.rain })),
+    { label: "Tmrw", code: wv.tomorrow.code, day: true, t: `${temp(wv.tomorrow.max)}/${temp(wv.tomorrow.min)}`, rain: wv.tomorrow.rain, bold: true },
+  ];
+  rows.forEach((r, i) => {
+    const y = 346 + i * 50;
+    out += text(x, y, r.label, { size: 16, fill: r.bold ? "#000" : GREY, bold: r.bold });
+    out += icon(describe(r.code)[1], x + 58, y - 28, 38, r.day);
+    out += text(x + 108, y, r.t, { size: 20, bold: true });
+    out += text(COL - M, y, `${r.rain ?? 0}%`, { size: 14, fill: GREY, anchor: "end" });
+  });
+  return out;
+}
+
+function landscapeScreensaver(now, zone, weather) {
+  const cx = L_WIDTH / 2;
+  let out = text(cx, 230, clock(now, zone), { size: 210, bold: true, anchor: "middle" });
+  out += text(cx, 290, dateText(now, zone), { size: 30, anchor: "middle" });
+  out += line(326, 100, L_WIDTH - 100);
+  if (weather.ok) {
+    const w = weather.value;
+    const [desc, kind] = describe(w.now.code);
+    out += icon(kind, 170, 344, 104, w.now.day);
+    out += text(300, 424, temp(w.now.temp), { size: 84, bold: true });
+    out += text(300, 458, `${desc}, feels ${temp(w.now.feels)}`, { size: 22, max: L_WIDTH - 300 - M });
+    const [today, tomorrow] = outlook(w);
+    out += text(cx, 518, today, { size: 20, fill: GREY, anchor: "middle" });
+    out += text(cx, 548, tomorrow, { size: 20, fill: GREY, anchor: "middle" });
+  } else {
+    out += text(cx, 440, "Weather unavailable", { size: 22, fill: GREY, anchor: "middle" });
+  }
+  out += text(cx, L_HEIGHT - 16, "Tap to wake", { size: 15, fill: GREY, anchor: "middle" });
+  return out;
+}
+
+function renderLandscape({ now, zone, weather, bus, car, power, page }) {
+  if (page === 0) return svgDoc(landscapeScreensaver(now, zone, weather), L_WIDTH, L_HEIGHT);
+  const right = page === 2
+    ? energyPage(power, 12, INNER_H - 56)
+    : travel(bus, car, power, zone, 12, INNER_H);
+  const body = leftColumn(now, zone, weather) +
+    `<line x1="${COL}" y1="${M}" x2="${COL}" y2="${L_HEIGHT - M}" stroke="#000" stroke-width="2"/>` +
+    `<g transform="translate(${COL} 0) scale(${SCALE.toFixed(4)})">${right}</g>`;
+  return svgDoc(body, L_WIDTH, L_HEIGHT);
+}
+
+// page 0: screensaver. page 1: clock, weather, buses and drive. page 2: clock, weather and energy.
+// landscape: draw 800 x 600 instead of 600 x 800 (rotating for the Kindle happens later).
+export function renderSvg({ now, zone, weather, bus, car, power, page = 1, landscape = false }) {
+  if (landscape) return renderLandscape({ now, zone, weather, bus, car, power, page });
+  if (page === 0) return svgDoc(screensaver(now, zone, weather));
+  const top = header(now, zone, weather) + forecast(weather);
+  if (page === 2) return svgDoc(top + energyPage(power, 298, HEIGHT - 52));
+  // (Without the page 2 setup, energy still shows on page 1 at the bottom.)
+  return svgDoc(top + travel(bus, car, power, zone, 298, HEIGHT));
 }

@@ -15,3 +15,14 @@ export FULL_DISPLAY_REFRESH_RATE=${FULL_DISPLAY_REFRESH_RATE:-10}
 export SLEEP_SCREEN_INTERVAL=3600
 export LOW_BATTERY_REPORTING=${LOW_BATTERY_REPORTING:-false}
 export LOW_BATTERY_THRESHOLD_PERCENT=10
+
+# --- Bus Dashboard pages (used by bus-dash.sh) ---
+# Swap between page 1 (buses) and page 2 (energy) every this many seconds.
+export ROTATE_SECONDS=${ROTATE_SECONDS:-10}
+# After a tap, stay on page 1 for this many seconds.
+export TAP_HOLD_SECONDS=${TAP_HOLD_SECONDS:-300}
+# Full (flashing) refresh every this many screen changes, to clear ghosting.
+export FULL_REFRESH_EVERY=${FULL_REFRESH_EVERY:-30}
+# The touchscreen is found automatically; set this only if taps don't work,
+# e.g. "/dev/input/event1" (the log lists the devices it saw).
+export TOUCH_DEVICE=${TOUCH_DEVICE:-}

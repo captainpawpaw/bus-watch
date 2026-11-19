@@ -5,31 +5,19 @@
 # Tap this "book" to start the dashboard. To get the normal Kindle back, restart it
 # (hold the power button for about 40 seconds).
 # Needs kindle-dash copied to the Kindle's drive as a folder called "dashboard",
-# and Wi-Fi switched on (Airplane mode off).
+# with bus-dash.sh and the local/ settings from this repo, and Wi-Fi on.
 
 DASH=/mnt/us/dashboard
 
-if [ ! -f "$DASH/dash.sh" ]; then
-  eips 1 1 "Bus Dashboard: no 'dashboard' folder found."
-  eips 1 2 "Copy kindle-dash to the Kindle first."
+if [ ! -f "$DASH/bus-dash.sh" ]; then
+  eips 1 1 "Bus Dashboard: dashboard/bus-dash.sh not found."
+  eips 1 2 "Copy the dashboard files to the Kindle first."
   exit 1
 fi
 
-# Plugged-in mode: wait between updates instead of deep sleep. kindle-dash's
-# wake-up timer is set up for the Kindle 4 and may not wake this model.
-sed -i 's|^\([ \t]*\)echo "mem" >/sys/power/state|\1sleep "$duration"|' "$DASH/dash.sh"
-
-# Start with a full (flashing) refresh, to clear what the Kindle was showing.
-sed -i 's|^num_refresh=0$|num_refresh=$FULL_DISPLAY_REFRESH_RATE|' "$DASH/dash.sh"
-
-# Work out the next wake-up after the update instead of before it, so the time
-# spent fetching doesn't push every update late (it keeps the clock on time).
-if ! grep -q "# bus-watch: recheck" "$DASH/dash.sh"; then
-  sed -i '/^    sleep 10$/a\    next_wakeup_secs=$("$DIR/next-wakeup" --schedule="$REFRESH_SCHEDULE" --timezone="$TIMEZONE") # bus-watch: recheck' "$DASH/dash.sh"
-fi
-
-# Make sure kindle-dash's scripts and programs can run.
-chmod +x "$DASH"/*.sh "$DASH"/local/*.sh "$DASH/xh" "$DASH/next-wakeup" 2>/dev/null
+# Make sure the scripts and kindle-dash's download tool can run.
+chmod +x "$DASH"/*.sh "$DASH"/local/*.sh "$DASH/xh" 2>/dev/null
+mkdir -p "$DASH/logs"
 
 # The rest runs in its own background process, because this script is started
 # from the Kindle's screen, which is about to be switched off.
@@ -37,12 +25,15 @@ eips 1 1 "Starting Bus Dashboard..."
 DETACH=nohup
 command -v setsid >/dev/null 2>&1 && DETACH=setsid
 $DETACH sh -c '
+  # Stop an earlier copy (including the old kindle-dash loop) if one is running.
+  # The [h] stops these patterns from matching this command itself.
+  pkill -f "'"$DASH"'/bus-das[h].sh" ; pkill -f "'"$DASH"'/das[h].sh"
   sleep 3
   # Stop the Kindle'"'"'s own screen so it does not draw over the dashboard.
   # Its name differs between firmware versions, so try each.
   (/etc/init.d/framework stop || stop framework || stop lab126_gui) >/dev/null 2>&1
   sleep 2
-  sh '"$DASH"'/start.sh
-' </dev/null >"$DASH/launch.log" 2>&1 &
+  exec sh '"$DASH"'/bus-dash.sh
+' </dev/null >>"$DASH/logs/bus-dash.log" 2>&1 &
 
 exit 0

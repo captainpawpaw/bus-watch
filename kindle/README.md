@@ -10,7 +10,7 @@ Turns an old e-ink Kindle into a wall dashboard showing:
 
 ![Example dashboard](example.png)
 
-Made for the basic Kindle (8th generation, 6", 600 × 800). It works in two parts:
+Made for the basic Kindle (8th generation, 6", 600 × 800), upright or on its side (`ORIENTATION`). It works in two parts:
 
 1. **A small web service on Vercel (free)** gathers the data and draws it as a grey-scale picture.
    Your keys and passwords stay in Vercel's settings, never on the Kindle or in this repo.
@@ -34,6 +34,8 @@ Any section you don't set up is left out, and the buses get the space.
 | `DRIVE_1`, `DRIVE_2`, … | Each journey and when to show it: `days times \| name \| destination`. It shows (and uses TomTom) only during those times. | e.g. `Mon-Fri 06:00-07:30 \| Langdon Academy \| E6 2PS` and `Sat-Sun 18:00-20:00 \| Asda Beckton \| E6 5JP`. Days can also be `Weekdays`, `Weekends`, `Daily` or `Sat,Sun`. To follow your own route instead of the fastest, add `\| via latitude,longitude` parts for points in the middle of roads you take, in order (avoid dual carriageways, where a point can land on the wrong side). |
 | `DRIVE_TO`, `DRIVE_LABEL` | Optional: one journey shown all day instead | Postcode or `latitude,longitude`, and a name |
 | `DRIVE_MAP` | Optional. A small map of the route is shown beside the drive time; set `off` to hide it and give the buses more room. | `off` |
+| `SCREENSAVER` | Optional. Hours the Kindle shows the big-clock screensaver; a tap wakes it. Default `00:00-06:00`. | e.g. `22:30-06:00`, or `off` |
+| `ORIENTATION` | Optional. `portrait` (the default), `landscape-right` (Kindle on its side, charging port on the right) or `landscape-left` (port on the left). Landscape puts the clock and weather in a column on the left. | e.g. `landscape-right` |
 | `GLOW_USERNAME`, `GLOW_PASSWORD` | Your smart meter, via the free **Bright** app (works with any UK supplier) | Install Bright (by Hildebrand), sign up and link your meter. Use that email and password. |
 | `TFL_APP_KEY` | Optional. Only needed if TfL starts refusing requests. | api-portal.tfl.gov.uk |
 | `TIMEZONE` | Optional. Defaults to `Europe/London`. | |
@@ -75,24 +77,36 @@ because an update can block the jailbreak.
    Amazon account. Updates are blocked automatically afterwards, and you can then delete the filler files.
 4. **Download kindle-dash:** get the latest release `.tgz` from github.com/pascalw/kindle-dash/releases
    and extract it on your computer (7-Zip can open `.tgz` files).
-5. **Add your settings:** copy the two files from `on-kindle/local/` in this repo over the ones in the
-   extracted `local/` folder. Then edit `local/fetch-dashboard.sh` and put in your Vercel address and `DASH_TOKEN`.
-6. **Copy it over:** plug the Kindle into your computer by USB. Copy the extracted kindle-dash folder to
-   the Kindle's drive and name it `dashboard` (so `dash.sh` is at `dashboard/dash.sh`). Then copy
+5. **Add the bus-watch files:** copy `on-kindle/dashboard/bus-dash.sh` from this repo into the extracted
+   folder, and the two files from `on-kindle/local/` over the ones in its `local/` folder. Then edit
+   `local/fetch-dashboard.sh` and put in your Vercel address and `DASH_TOKEN`.
+6. **Copy it over:** plug the Kindle into your computer by USB. Copy the folder to the Kindle's drive and
+   name it `dashboard` (so the script is at `dashboard/bus-dash.sh`). Then copy
    `on-kindle/documents/Bus Dashboard.sh` from this repo into the Kindle's `documents` folder.
 7. Eject the Kindle, turn Airplane mode off and connect to Wi‑Fi. **Plug it into a USB charger.**
 8. In your library, tap **Bus Dashboard**. After about 10 to 20 seconds your dashboard appears.
 
-The **Bus Dashboard** "book" is a scriptlet: a small script the jailbreak lets you run from the
-library. (KUAL, the older app menu, doesn't work with current jailbreaks.) It also switches kindle-dash
-to plugged-in mode, where the Kindle stays awake between updates instead of going into deep sleep.
-kindle-dash's wake-up timer was made for the Kindle 4 and may not wake newer models, so **keep it
-plugged in**. Updating every minute would use up the battery in about a day either way.
+**How it runs:** the **Bus Dashboard** "book" is a scriptlet, a small script the jailbreak lets you run
+from the library. (KUAL, the older app menu, doesn't work with current jailbreaks.) It switches off the
+Kindle's own screen and starts `bus-dash.sh`, which:
+
+- downloads **page 1** (clock, weather, buses, drive) and **page 2** (clock, weather, gas and electric)
+  at the start of every minute, so the clock stays right;
+- swaps between them **every 10 seconds** (only page 1 shows until the smart meter is set up);
+- goes back to **page 1 for 5 minutes** when you **tap anywhere** on the screen;
+- shows a **screensaver** (big clock and a little weather) during screensaver hours, midnight to
+  06:00 unless you set `SCREENSAVER` in Vercel (e.g. `22:30-06:00`, or `off`). A tap or swipe wakes the
+  bus page for 5 minutes;
+- does a full (flashing) refresh now and then to clear e-ink ghosting.
+
+These timings are in `local/env.sh`. kindle-dash is still needed for its download tool (`xh`); its own
+update loop isn't used. The Kindle stays awake the whole time, so **keep it plugged in**.
 
 **To get the normal Kindle back:** restart it (hold the power button for about 40 seconds).
 
-**If the screen doesn't change:** look at `dashboard/logs/dash.log` on the Kindle's drive (connect it
-by USB). It shows each update and any error.
+**If the screen doesn't change, or taps don't switch pages:** look at `dashboard/logs/bus-dash.log` on
+the Kindle's drive (connect it by USB). It lists the input devices it found and which one it watches
+for taps. If it picked the wrong one, set `TOUCH_DEVICE` in `local/env.sh`.
 
 ## Changing the dashboard
 
@@ -100,8 +114,9 @@ by USB). It shows each update and any error.
 - **Preview with your real data:** put your settings in a `.env` file in this folder
   (`NAME=value`, one per line; it's ignored by git), then `npm run preview`.
 - **Watch it live on a phone or computer:** `https://YOUR-PROJECT.vercel.app/view?key=YOUR_DASH_TOKEN`
-  refreshes itself just after every minute.
-- **Just the picture:** `https://YOUR-PROJECT.vercel.app/dashboard.svg?key=YOUR_DASH_TOKEN`
+  works like the Kindle: new pictures every minute, pages swap every 10 seconds, and a click goes back to page 1.
+- **Just the picture:** `https://YOUR-PROJECT.vercel.app/dashboard.png?key=YOUR_DASH_TOKEN&page=1` (or `page=2`).
+  Without `&page`, energy goes at the bottom of a single page, as before.
 - The layout is in `src/render.js`; each data source has its own file in `src/`.
 
 Data: TfL Open Data, Open-Meteo, TomTom and Bright (Glowmarkt). Font: Inter (SIL Open Font Licence, `fonts/OFL.txt`).
