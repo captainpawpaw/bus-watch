@@ -53,6 +53,8 @@ const driveNow = (env, now) => hasDrives(env) && !!activeJourney(env, now);
 export const page1IsEnergy = (env, now = new Date()) =>
   hasEnergy(env) && !busHours(env, now) && !driveNow(env, now);
 
+let lastWeatherSource = "";
+
 export async function buildSvg(env, now = new Date(), page = 1, { single = true } = {}) {
   let back = true;
   if (page === 1 && !single && page1IsEnergy(env, now)) { page = 2; back = false; }
@@ -69,6 +71,7 @@ export async function buildSvg(env, now = new Date(), page = 1, { single = true 
     wantDrive ? settle(hasDrives(env), () => getDrive(env, now)) : skip,
     wantEnergy ? settle(hasEnergy(env), () => getEnergy(env, now)) : skip,
   ]);
+  lastWeatherSource = weather.ok ? weather.value.source || "" : "unavailable";
   // WEATHER_PLACE (e.g. "Dagenham") is shown with the weather.
   if (weather.ok && env.WEATHER_PLACE) weather.value = { ...weather.value, place: String(env.WEATHER_PLACE).trim() };
   // A drive outside its days and hours is left out, like one that isn't set up.
@@ -121,7 +124,10 @@ export async function handle(request, env, { Resvg, fonts }) {
   if (page === 0 && !isScreensaverTime(env) && url.searchParams.get("force") !== "1") {
     return new Response("Not screensaver time.", { status: 404 });
   }
-  const svg = await buildSvg(env, new Date(), page, { single: pageParam === null });
+  let svg = await buildSvg(env, new Date(), page, { single: pageParam === null });
+  // Say where the weather came from in the SVG (invisible), to check the Met
+  // Office is being used: e.g. view-source on /dashboard.svg?key=...
+  if (lastWeatherSource) svg = svg.replace("<svg ", `<svg data-weather-source="${lastWeatherSource}" `);
   if (url.pathname.endsWith(".svg") || url.searchParams.get("format") === "svg") {
     return new Response(svg, { headers: { "content-type": "image/svg+xml", "cache-control": "no-store" } });
   }
