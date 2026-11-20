@@ -36,7 +36,7 @@ Any section you don't set up is left out, and the buses get the space.
 | `DRIVE_FROM_LABEL` | Optional. The name of where drives start, shown in the heading ("HOME → LANGDON ACADEMY"). Default `Home`. | e.g. `Home` |
 | `DRIVE_TO`, `DRIVE_LABEL` | Optional: one journey shown all day instead | Postcode or `latitude,longitude`, and a name |
 | `DRIVE_MAP` | Optional. A small map of the route is shown beside the drive time; set `off` to hide it and give the buses more room. | `off` |
-| `SCREENSAVER` | Optional. When the Kindle shows the big-clock screensaver; a tap wakes the dashboard for 5 minutes. Default `00:00-06:00`. `outside-drives` shows it at all times except during your `DRIVE_1`, `DRIVE_2`… windows. | e.g. `22:30-06:00`, `outside-drives`, or `off` |
+| `SCREENSAVER` | Optional. When the Kindle shows the big-clock screensaver; a tap wakes the dashboard for 5 minutes. Default `00:00-06:00`. `outside-drives` shows it at all times except during your `DRIVE_1`, `DRIVE_2`… windows and bus hours (`BUS_HOURS` and any stop's own hours). | e.g. `22:30-06:00`, `outside-drives`, or `off` |
 | `ORIENTATION` | Optional. `portrait` (the default), `landscape-right` (Kindle on its side, charging port on the right) or `landscape-left` (port on the left). Landscape puts the clock and weather in a column on the left. | e.g. `landscape-right` |
 | `GLOW_USERNAME`, `GLOW_PASSWORD` | Your smart meter, via the free **Bright** app (works with any UK supplier) | Install Bright (by Hildebrand), sign up and link your meter. Use that email and password. |
 | `TFL_APP_KEY` | Optional. Only needed if TfL starts refusing requests. | api-portal.tfl.gov.uk |
