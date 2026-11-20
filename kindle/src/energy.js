@@ -10,12 +10,14 @@ const APP_ID = "b0f1b774-a586-4f72-9edd-27ead8aa7a8d";
 // Kept between requests while the service stays warm.
 let token = null, tokenExpires = 0, resources = null;
 let cached = null, cachedAt = 0;
-const CACHE_MS = 20 * 60 * 1000; // Meter data only changes every 30 minutes at best.
+// Bright only gets new readings about once a day, so ask it every 6 hours.
+// (If Vercel restarts the service, it asks again once.)
+const CACHE_MS = 6 * 60 * 60 * 1000;
 // Bright's readings can take several seconds each, so allow plenty of time.
 const SLOW = 25000;
 // If Bright is slow or down, show the last figures we got (up to this old)
 // rather than an error: they only change about once a day.
-const KEEP_MS = 36 * 60 * 60 * 1000;
+const KEEP_MS = 48 * 60 * 60 * 1000;
 
 async function login(env) {
   if (token && Date.now() < tokenExpires) return token;

@@ -75,6 +75,28 @@ export function activeJourney(env, now) {
   return null;
 }
 
+// Whether now is inside a "days times" window such as "Mon-Fri 04:30-10:00".
+// A window that can't be read counts as always open, so a typo never hides things.
+export function inWindow(text, env, now = new Date()) {
+  const m = String(text || "").trim().match(/^(.*?)\s+(\S+)\s*-\s*(\S+)$/);
+  if (!m) return true;
+  let days, start, end;
+  try {
+    days = parseDays(m[1].replace(/\s+/g, ""));
+    start = toMinutes(m[2]);
+    end = toMinutes(m[3]);
+  } catch {
+    return true;
+  }
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: tz(env), weekday: "short", hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+  }).formatToParts(now);
+  const get = t => parts.find(p => p.type === t).value;
+  const day = DAYS.indexOf(get("weekday").toLowerCase().slice(0, 3));
+  const mins = +get("hour") * 60 + +get("minute");
+  return days.has(day) && mins >= start && mins < end;
+}
+
 // Whether now is inside one of the timed journeys' windows (DRIVE_1, DRIVE_2, ...).
 // Used for SCREENSAVER=outside-drives. A badly written journey is just skipped.
 export function inDriveWindow(env, now = new Date()) {

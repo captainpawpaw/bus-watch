@@ -2,7 +2,7 @@
 // (the SVG -> pixels renderer) and the font files.
 import { getWeather } from "./weather.js";
 import { getBuses } from "./buses.js";
-import { getDrive, hasDrives, inDriveWindow } from "./driving.js";
+import { getDrive, hasDrives, inDriveWindow, inWindow, activeJourney } from "./driving.js";
 import { getEnergy } from "./energy.js";
 import { renderSvg, WIDTH, HEIGHT } from "./render.js";
 import { greyPng, rotate } from "./png.js";
@@ -42,18 +42,34 @@ export function isScreensaverTime(env, now = new Date()) {
 
 // page 1: clock, weather, buses, drive. page 2: clock, weather, energy.
 // Without ?page (the old single-page layout), energy sits at the bottom of page 1.
+// BUS_HOURS, e.g. "Mon-Fri 04:30-10:00": when bus times are shown. Not set: always.
+export const busHours = (env, now = new Date()) => !env.BUS_HOURS || inWindow(env.BUS_HOURS, env, now);
+const driveNow = (env, now) => hasDrives(env) && !!activeJourney(env, now);
+
+// Outside bus hours and outside any drive, page 1 has nothing of its own, so it
+// shows the energy page instead (and there's no separate page 2 to rotate to).
+export const page1IsEnergy = (env, now = new Date()) =>
+  hasEnergy(env) && !busHours(env, now) && !driveNow(env, now);
+
 export async function buildSvg(env, now = new Date(), page = 1, { single = true } = {}) {
-  const wantBus = page === 1, wantEnergy = page === 2 || (single && page === 1);
+  let back = true;
+  if (page === 1 && !single && page1IsEnergy(env, now)) { page = 2; back = false; }
+  const buses = busHours(env, now);
+  const wantBus = page === 1 && buses;
+  const wantDrive = page === 1;
+  // Energy goes on page 1 too in the single-page layout, or in place of the
+  // bus times outside bus hours (under the drive).
+  const wantEnergy = page === 2 || (page === 1 && (single || !buses));
   const skip = Promise.resolve({ ok: false, missing: true });
   const [weather, bus, car, power] = await Promise.all([
     settle(true, () => getWeather(env)),
     wantBus ? settle(true, () => getBuses(env, now)) : skip,
-    wantBus ? settle(hasDrives(env), () => getDrive(env, now)) : skip,
+    wantDrive ? settle(hasDrives(env), () => getDrive(env, now)) : skip,
     wantEnergy ? settle(hasEnergy(env), () => getEnergy(env, now)) : skip,
   ]);
   // A drive outside its days and hours is left out, like one that isn't set up.
   const drive = car.ok && car.value === null ? { ok: false, missing: true } : car;
-  return renderSvg({ now, zone: tz(env), weather, bus, car: drive, power, page, landscape: orientation(env).landscape });
+  return renderSvg({ now, zone: tz(env), weather, bus, car: drive, power, page, back, landscape: orientation(env).landscape });
 }
 
 // turn: "cw" or "ccw" to rotate a landscape picture for the Kindle (see png.js).
@@ -91,6 +107,10 @@ export async function handle(request, env, { Resvg, fonts }) {
   if (page === 2 && !hasEnergy(env)) {
     // Tells the Kindle there's no page 2 yet, so it just shows page 1.
     return new Response("No page 2: the smart meter isn't set up.", { status: 404 });
+  }
+  if (page === 2 && pageParam === "2" && page1IsEnergy(env)) {
+    // Page 1 is already the energy page (outside bus hours), so don't rotate.
+    return new Response("No page 2: page 1 is showing energy.", { status: 404 });
   }
   // Page 0 is the screensaver. It only exists during screensaver hours, which is
   // how the Kindle knows when to show it (?force=1 shows it any time, to preview).

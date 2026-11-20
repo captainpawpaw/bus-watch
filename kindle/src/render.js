@@ -438,6 +438,12 @@ function travel(bus, car, power, zone, top, bottom) {
     bottom -= car.ok && car.value.map ? DRIVE_MAP_H : DRIVE_H;
     driveSvg = line(bottom) + drive(car, zone, bottom);
   }
+  if (bus && bus.missing) {
+    // No bus times now (outside BUS_HOURS): the drive and energy move up.
+    const driveTop = top, energyTop = top + (showDrive ? (car.ok && car.value.map ? DRIVE_MAP_H : DRIVE_H) : 0);
+    return (showDrive ? drive(car, zone, driveTop) : "") +
+      (showEnergy ? (showDrive ? line(energyTop) : "") + energy(power, energyTop) : "");
+  }
   return buses(bus, zone, top, bottom).svg + driveSvg + energySvg;
 }
 
@@ -451,7 +457,7 @@ function energyPage(power, top, buttonY) {
     ? text(RIGHT, top + 24, `Gas + electric, this week: ${pounds(totals[0] + totals[1])}`, { size: 16, bold: true, anchor: "end" })
     : "";
   return both + energyBlock("Electric", e.electric, e, top) + line(top + 222) +
-    energyBlock("Gas", e.gas, e, top + 222) + backButton(buttonY);
+    energyBlock("Gas", e.gas, e, top + 222) + (buttonY === null ? "" : backButton(buttonY));
 }
 
 // ---------- landscape (800 x 600) ----------
@@ -500,7 +506,9 @@ function travelLandscape(bus, car, power, zone) {
   const showEnergy = power && (power.ok || !power.missing);
   const driveH = showDrive ? (car.ok && car.value.map ? DRIVE_MAP_H : DRIVE_H) * SCALE : 0;
   const energyH = showEnergy ? 140 * SCALE : 0;
-  const b = buses(bus, zone, 4, L_HEIGHT - driveH - energyH - 6, { left: COL + 18, right: L_WIDTH - 20, big: true });
+  // Outside BUS_HOURS there's no bus section, so the drive and energy move up.
+  const b = bus && bus.missing ? { svg: "", end: 0 }
+    : buses(bus, zone, 4, L_HEIGHT - driveH - energyH - 6, { left: COL + 18, right: L_WIDTH - 20, big: true });
   let out = b.svg;
   let y = b.end + 8;
   const scaled = (svg, at) => `<g transform="translate(${COL} ${at.toFixed(1)}) scale(${SCALE.toFixed(4)})">${svg}</g>`;
@@ -533,10 +541,10 @@ function landscapeScreensaver(now, zone, weather) {
   return out;
 }
 
-function renderLandscape({ now, zone, weather, bus, car, power, page }) {
+function renderLandscape({ now, zone, weather, bus, car, power, page, back = true }) {
   if (page === 0) return svgDoc(landscapeScreensaver(now, zone, weather), L_WIDTH, L_HEIGHT);
   const right = page === 2
-    ? `<g transform="translate(${COL} 0) scale(${SCALE.toFixed(4)})">${energyPage(power, 12, INNER_H - 56)}</g>`
+    ? `<g transform="translate(${COL} 0) scale(${SCALE.toFixed(4)})">${energyPage(power, 12, back ? INNER_H - 56 : null)}</g>`
     : travelLandscape(bus, car, power, zone);
   const body = leftColumn(now, zone, weather) +
     `<line x1="${COL}" y1="${M}" x2="${COL}" y2="${L_HEIGHT - M}" stroke="#000" stroke-width="2"/>` + right;
@@ -545,11 +553,13 @@ function renderLandscape({ now, zone, weather, bus, car, power, page }) {
 
 // page 0: screensaver. page 1: clock, weather, buses and drive. page 2: clock, weather and energy.
 // landscape: draw 800 x 600 instead of 600 x 800 (rotating for the Kindle happens later).
-export function renderSvg({ now, zone, weather, bus, car, power, page = 1, landscape = false }) {
-  if (landscape) return renderLandscape({ now, zone, weather, bus, car, power, page });
+// back: show the "Tap for buses" button on the energy page (not when it stands
+// in for the bus page outside bus hours).
+export function renderSvg({ now, zone, weather, bus, car, power, page = 1, landscape = false, back = true }) {
+  if (landscape) return renderLandscape({ now, zone, weather, bus, car, power, page, back });
   if (page === 0) return svgDoc(screensaver(now, zone, weather));
   const top = header(now, zone, weather) + forecast(weather);
-  if (page === 2) return svgDoc(top + energyPage(power, 298, HEIGHT - 52));
+  if (page === 2) return svgDoc(top + energyPage(power, 298, back ? HEIGHT - 52 : null));
   // (Without the page 2 setup, energy still shows on page 1 at the bottom.)
   return svgDoc(top + travel(bus, car, power, zone, 298, HEIGHT));
 }
