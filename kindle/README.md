@@ -3,7 +3,7 @@
 Turns an old e-ink Kindle into a wall dashboard showing:
 
 - the current time and date
-- weather now, the next 12 hours, and tomorrow
+- weather now, the next 12 hours, and tomorrow, plus a rain alert: when the next rain starts (even a little), how heavy, for how long, and the chance of it
 - live TfL bus times for your stops, and when to leave for whichever bus you need to set off for first
 - drive time and arrival time with live traffic for journeys at set times, a small route map, and roadworks and incidents on the route
 - gas and electricity use from your smart meter (yesterday, today so far, and the last 7 days)
