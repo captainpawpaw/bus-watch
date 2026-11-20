@@ -72,6 +72,14 @@ fetch_page() {
   return 1
 }
 
+# Battery level and whether it's charging, for the log.
+battery() {
+  level=$(gasgauge-info -c 2>/dev/null || lipc-get-prop com.lab126.powerd battLevel 2>/dev/null)
+  charging=$(lipc-get-prop com.lab126.powerd isCharging 2>/dev/null)
+  case "$charging" in 1) charging=", charging" ;; 0) charging=", not charging" ;; *) charging="" ;; esac
+  echo "${level:-unknown}${charging}"
+}
+
 show() {
   if [ "$2" = full ]; then eips -f -g "$1" >/dev/null 2>&1; else eips -g "$1" >/dev/null 2>&1; fi
   # Keep the "no connection" warning on screen while it applies.
@@ -114,6 +122,7 @@ fi
 
 echo 0 >"$TAP_FILE"
 started=$(date +%s)
+last_batt=0
 has2=""
 fails=0
 last_ok=$(date +%s)
@@ -161,6 +170,12 @@ while true; do
     fi
   fi
 
+  # Battery every 30 minutes, to see how long it lasts off the charger.
+  if [ $((now - last_batt)) -ge 1800 ]; then
+    log "battery $(battery)"
+    last_batt=$now
+  fi
+
   tap=$(cat "$TAP_FILE" 2>/dev/null)
   idle=1
   [ $((now - ${tap:-0})) -lt "$TAP_HOLD_SECONDS" ] && idle=0
@@ -183,9 +198,14 @@ while true; do
       mode=full
       count=0
     fi
-    # Log page changes for the first 10 minutes, to check rotation is working.
+    # Log page changes for the first 10 minutes, to check rotation is working,
+    # and whenever the screensaver starts or ends.
     if [ "$want" != "$shown" ] && [ $((now - started)) -lt 600 ]; then
       log "showing page $want ($mode refresh)"
+    elif [ "$want" = 0 ] && [ "$shown" != 0 ]; then
+      log "screensaver on"
+    elif [ "$shown" = 0 ] && [ "$want" != 0 ]; then
+      log "screensaver off (showing page $want)"
     fi
     show "$TMP/page$want.png" "$mode"
     shown=$want
