@@ -124,4 +124,4 @@ for taps. If it picked the wrong one, set `TOUCH_DEVICE` in `local/env.sh`.
   Without `&page`, energy goes at the bottom of a single page, as before.
 - The layout is in `src/render.js`; each data source has its own file in `src/`.
 
-Data: TfL Open Data, Open-Meteo, TomTom and Bright (Glowmarkt). Font: Inter (SIL Open Font Licence, `fonts/OFL.txt`).
+Data: TfL Open Data, Open-Meteo (with yr.no / MET Norway, CC BY 4.0, as an automatic backup), TomTom and Bright (Glowmarkt). Font: Inter (SIL Open Font Licence, `fonts/OFL.txt`).
