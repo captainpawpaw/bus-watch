@@ -464,7 +464,7 @@ function notesScreensaver(now, zone, weather, notes, W, H) {
       out += icon(kind, rx - 4, 58, 62, w.now.day);
       out += text(rx + 70, 108, temp(w.now.temp), { size: 50, bold: true });
       out += text(rx, 140, `${desc}, feels ${temp(w.now.feels)}`, { size: 17, max: rw });
-      out += text(rx, 166, rainHead, { size: 17, bold: true, max: rw * 1.15 });
+      out += text(rx, 166, rainHead.replace("No rain expected", "No rain"), { size: 17, bold: true, max: rw * 1.15 });
     }
     top = 182;
   } else {
