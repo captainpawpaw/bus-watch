@@ -148,7 +148,7 @@ function buses(result, zone, top, bottom, opt = {}) {
     if (big) {
       // Its own line, so it's never cut short.
       y += 28;
-      out += text(L, y, advice, { size: z.leave, bold: true, max: W });
+      out += text(L, y, advice, { size: z.leave, bold: true, max: W * 1.12 });
     } else {
       out += text(R, y, advice, { size: z.leave, bold: true, anchor: "end", max: W - 70 });
     }
@@ -294,8 +294,9 @@ function energy(result, top) {
     }
     const kwh = i => f.kwh[i];
     const cost = i => (f.pence && f.pence[i] != null ? `£${(f.pence[i] / 100).toFixed(2)}` : "");
-    const yest = kwh(5);
-    out += text(x, y + 26, yest == null ? "Yesterday: no data" : `Yesterday ${yest.toFixed(1)} kWh ${cost(5)}`,
+    const last = latestDay(f);
+    out += text(x, y + 26, last < 0 ? "No readings yet"
+      : `${dayLabel(last, e.dayNames)} ${kwh(last).toFixed(1)} kWh ${cost(last)}`,
       { size: 18, bold: true, max: colW });
     out += text(x, y + 46, kwh(6) ? `Today so far ${kwh(6).toFixed(1)} kWh` : "Today: no data yet",
       { size: 15, fill: GREY, max: colW });
@@ -306,7 +307,7 @@ function energy(result, top) {
     f.kwh.forEach((v, i) => {
       const bx = x + i * barW + 4;
       const h = v ? Math.max(2, (v / max) * chartH) : 0;
-      if (h) out += `<rect x="${bx}" y="${chartTop + chartH - h}" width="${barW - 8}" height="${h}" fill="${i === 5 ? "#000" : "#888"}"/>`;
+      if (h) out += `<rect x="${bx}" y="${chartTop + chartH - h}" width="${barW - 8}" height="${h}" fill="${i === last ? "#000" : "#888"}"/>`;
       out += text(bx + (barW - 8) / 2, chartTop + chartH + 16, e.days[i], { size: 13, fill: GREY, anchor: "middle" });
     });
   });
@@ -314,28 +315,38 @@ function energy(result, top) {
 }
 
 // Gas and electric for page 2: a big block each with a 7-day chart.
-function energyBlock(name, f, days, top) {
+// Bright usually runs a day behind and sends 0 for days it hasn't got yet, so
+// use the most recent full day (not today) that actually has readings.
+function latestDay(f) {
+  for (let i = 5; i >= 0; i--) if (f.kwh[i] > 0) return i;
+  return -1;
+}
+const dayLabel = (i, names) => (i === 5 ? "Yesterday" : names ? names[i] : "");
+
+function energyBlock(name, f, days, top, names) {
   let y = top + 24;
   let out = heading(y, name);
   if (!f) return out + text(M, y + 32, "No meter found", { size: 18, fill: GREY });
   const cost = i => (f.pence && f.pence[i] != null ? ` · £${(f.pence[i] / 100).toFixed(2)}` : "");
-  const yest = f.kwh[5], today = f.kwh[6];
-  out += text(M, y + 36, yest == null ? "Yesterday: no data yet" : `Yesterday ${yest.toFixed(1)} kWh${cost(5)}`,
+  const last = latestDay(f), today = f.kwh[6];
+  out += text(M, y + 36, last < 0 ? "No readings yet"
+    : `${dayLabel(last, names)} ${f.kwh[last].toFixed(1)} kWh${cost(last)}`,
     { size: 26, bold: true, max: WIDTH - 2 * M });
-  out += text(M, y + 60, today ? `Today so far ${today.toFixed(1)} kWh${cost(6)}` : "Today: no data yet",
+  out += text(M, y + 60, today > 0 ? `Today so far ${today.toFixed(1)} kWh${cost(6)}`
+    : "Today: no data yet (Bright is usually a day behind)",
     { size: 17, fill: GREY, max: WIDTH - 2 * M });
 
-  // Last 7 days as bars with their values, yesterday in black.
+  // Last 7 days as bars with their values, the latest full day in black.
   const chartTop = y + 92, chartH = 76, max = Math.max(...f.kwh.map(v => v || 0), 0.1);
   const barW = (WIDTH - 2 * M) / 7;
   f.kwh.forEach((v, i) => {
     const bx = M + i * barW + 8, w = barW - 16, cx = bx + w / 2;
     const h = v ? Math.max(2, (v / max) * chartH) : 0;
     if (h) {
-      out += `<rect x="${bx}" y="${chartTop + chartH - h}" width="${w}" height="${h}" fill="${i === 5 ? "#000" : "#999"}"/>`;
+      out += `<rect x="${bx}" y="${chartTop + chartH - h}" width="${w}" height="${h}" fill="${i === last ? "#000" : "#999"}"/>`;
       out += text(cx, chartTop + chartH - h - 5, v.toFixed(v < 10 ? 1 : 0), { size: 13, fill: GREY, anchor: "middle" });
     }
-    out += text(cx, chartTop + chartH + 18, days[i], { size: 14, fill: GREY, anchor: "middle", bold: i === 5 });
+    out += text(cx, chartTop + chartH + 18, days[i], { size: 14, fill: GREY, anchor: "middle", bold: i === last });
   });
   return out;
 }
@@ -408,8 +419,8 @@ function travel(bus, car, power, zone, top, bottom) {
 function energyPage(power, top, buttonY) {
   if (!power.ok) return heading(top + 22, "Energy") + unavailable(top + 52, "Smart meter", power.error);
   const e = power.value;
-  return energyBlock("Electric", e.electric, e.days, top) + line(top + 222) +
-    energyBlock("Gas", e.gas, e.days, top + 222) + backButton(buttonY);
+  return energyBlock("Electric", e.electric, e.days, top, e.dayNames) + line(top + 222) +
+    energyBlock("Gas", e.gas, e.days, top + 222, e.dayNames) + backButton(buttonY);
 }
 
 // ---------- landscape (800 x 600) ----------

@@ -5,7 +5,7 @@
   "functions": {
     "api/dashboard.js": {
       "includeFiles": "{fonts/*.ttf,node_modules/@resvg/resvg-wasm/index_bg.wasm}",
-      "maxDuration": 20
+      "maxDuration": 40
     }
   },
   "rewrites": [

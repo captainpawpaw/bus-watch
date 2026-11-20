@@ -11,6 +11,11 @@ const APP_ID = "b0f1b774-a586-4f72-9edd-27ead8aa7a8d";
 let token = null, tokenExpires = 0, resources = null;
 let cached = null, cachedAt = 0;
 const CACHE_MS = 20 * 60 * 1000; // Meter data only changes every 30 minutes at best.
+// Bright's readings can take several seconds each, so allow plenty of time.
+const SLOW = 25000;
+// If Bright is slow or down, show the last figures we got (up to this old)
+// rather than an error: they only change about once a day.
+const KEEP_MS = 36 * 60 * 60 * 1000;
 
 async function login(env) {
   if (token && Date.now() < tokenExpires) return token;
@@ -18,7 +23,7 @@ async function login(env) {
     method: "POST",
     headers: { applicationId: APP_ID, "content-type": "application/json" },
     body: JSON.stringify({ username: env.GLOW_USERNAME, password: env.GLOW_PASSWORD }),
-  });
+  }, SLOW);
   if (!res.valid || !res.token) throw new Error("Bright login failed");
   token = res.token;
   // Tokens last about a week; renew a day early.
@@ -28,12 +33,21 @@ async function login(env) {
 }
 
 export async function getEnergy(env, now) {
+  try {
+    return await fetchEnergy(env, now);
+  } catch (e) {
+    if (cached && Date.now() - cachedAt < KEEP_MS) return { ...cached, stale: true };
+    throw e;
+  }
+}
+
+async function fetchEnergy(env, now) {
   if (!env.GLOW_USERNAME || !env.GLOW_PASSWORD) throw new Error("GLOW_USERNAME / GLOW_PASSWORD not set");
   if (cached && Date.now() - cachedAt < CACHE_MS) return cached;
 
   const t = await login(env);
   const headers = { applicationId: APP_ID, token: t };
-  if (!resources) resources = await getJson(`${API}/resource`, { headers });
+  if (!resources) resources = await getJson(`${API}/resource`, { headers }, SLOW);
   const find = c => resources.find(r => r.classifier === c)?.resourceId;
 
   // Last 7 days, one total per local day, today last.
@@ -53,7 +67,7 @@ export async function getEnergy(env, now) {
       fetch(`${API}/resource/${id}/catchup`, { headers }).catch(() => {});
     }
     const q = new URLSearchParams({ from, to, period: "P1D", function: "sum", offset: String(offset) });
-    const r = await getJson(`${API}/resource/${id}/readings?${q}`, { headers });
+    const r = await getJson(`${API}/resource/${id}/readings?${q}`, { headers }, SLOW);
     const values = new Array(7).fill(null);
     for (const [ts, value] of r.data || []) {
       const lp = localParts(new Date(ts * 1000), zone);
@@ -79,7 +93,12 @@ export async function getEnergy(env, now) {
     days.push(new Intl.DateTimeFormat("en-GB", { weekday: "narrow", timeZone: "UTC" })
       .format(new Date(today - i * 864e5)));
   }
-  cached = { electric, gas, days };
+  const dayNames = [];
+  for (let i = 6; i >= 0; i--) {
+    dayNames.push(new Intl.DateTimeFormat("en-GB", { weekday: "long", timeZone: "UTC" })
+      .format(new Date(today - i * 864e5)));
+  }
+  cached = { electric, gas, days, dayNames };
   cachedAt = Date.now();
   return cached;
 }
