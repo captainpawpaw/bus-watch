@@ -39,6 +39,7 @@ Any section you don't set up is left out, and the buses get the space.
 | `SCREENSAVER` | Optional. When the Kindle shows the big-clock screensaver; a tap wakes the dashboard for 5 minutes. Default `00:00-06:00`. `outside-drives` shows it at all times except during your `DRIVE_1`, `DRIVE_2`… windows and bus hours (`BUS_HOURS` and any stop's own hours). | e.g. `22:30-06:00`, `outside-drives`, or `off` |
 | `ORIENTATION` | Optional. `portrait` (the default), `landscape-right` (Kindle on its side, charging port on the right) or `landscape-left` (port on the left). Landscape puts the clock and weather in a column on the left. | e.g. `landscape-right` |
 | `GLOW_USERNAME`, `GLOW_PASSWORD` | Your smart meter, via the free **Bright** app (works with any UK supplier) | Install Bright (by Hildebrand), sign up and link your meter. Use that email and password. |
+| `METOFFICE_KEY` | Optional (Secret). Makes the Met Office the first weather source, with Open-Meteo and then yr.no as backups. Free: Weather DataHub, "Site-specific – Global Spot" plan (360 calls a day; this uses about 96). | datahub.metoffice.gov.uk → register → subscribe to Global Spot → copy the API key |
 | `TFL_APP_KEY` | Optional. Only needed if TfL starts refusing requests. | api-portal.tfl.gov.uk |
 | `TIMEZONE` | Optional. Defaults to `Europe/London`. | |
 
@@ -124,4 +125,4 @@ for taps. If it picked the wrong one, set `TOUCH_DEVICE` in `local/env.sh`.
   Without `&page`, energy goes at the bottom of a single page, as before.
 - The layout is in `src/render.js`; each data source has its own file in `src/`.
 
-Data: TfL Open Data, Open-Meteo (with yr.no / MET Norway, CC BY 4.0, as an automatic backup), TomTom and Bright (Glowmarkt). Font: Inter (SIL Open Font Licence, `fonts/OFL.txt`).
+Data: TfL Open Data, the Met Office (if `METOFFICE_KEY` is set), Open-Meteo and yr.no / MET Norway (CC BY 4.0) as backups, TomTom and Bright (Glowmarkt). Font: Inter (SIL Open Font Licence, `fonts/OFL.txt`).
