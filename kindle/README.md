@@ -27,6 +27,7 @@ Any section you don't set up is left out, and the buses get the space.
 |---|---|---|
 | `DASH_TOKEN` | A password for your dashboard's address, so only your Kindle can see it. **Required.** | Make up a long random one, e.g. 20+ letters and numbers. |
 | `HOME_LATLON` | Where to get the weather for, as `latitude,longitude` | In Google Maps, press and hold on your home; the numbers at the top are it. E.g. `51.54,0.13` |
+| `WEATHER_PLACE` | Optional. A name shown with the weather, so it's clear where it's for. | e.g. `Dagenham` |
 | `BUS_STOPS` | Your stops, separated by `;`. Add `:` and routes to show only those routes, and `@` and your walk to the stop in minutes. | Find the stop on tfl.gov.uk; its ID is in the page address, e.g. `tfl.gov.uk/bus/stop/490000077E/...` (or send the 5-digit code on the stop sign). Example: `490008458N:62@7; 490008457N:368@10`. To show a stop only at certain times, add days and hours after the walk time: `490008457S:368@12 Sat-Sun 08:00-10:00`. |
 | `BUS_HOURS` | Optional. When bus times are shown, as `days times`. Outside these hours the main page shows the smart meter instead (with the drive, if one is due). Not set: always. | e.g. `Mon-Fri 04:30-10:00` |
 | `BUS_WALK_MINUTES` | Optional. Walk time for stops without `@`. | e.g. `4` |
