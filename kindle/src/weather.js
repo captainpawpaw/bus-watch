@@ -20,13 +20,16 @@ export async function getWeather(env) {
     () => fetchYr(env, lat, lon),
   ];
   let firstError;
+  // Why earlier sources were passed over (hidden in the SVG, for checking).
+  const skipped = env.METOFFICE_KEY ? [] : ["Met Office: METOFFICE_KEY not set"];
   for (const source of sources) {
     try {
-      const fresh = await source();
+      const fresh = { ...(await source()), skipped };
       cached = fresh; cachedAt = Date.now(); cachedFor = key;
       return fresh;
     } catch (e) {
       firstError ??= e;
+      skipped.push(String(e?.message || e).slice(0, 200));
     }
   }
   // All failed: keep showing the last forecast for a while.
