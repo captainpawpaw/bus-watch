@@ -53,7 +53,7 @@ const driveNow = (env, now) => hasDrives(env) && !!activeJourney(env, now);
 export const page1IsEnergy = (env, now = new Date()) =>
   hasEnergy(env) && !busHours(env, now) && !driveNow(env, now);
 
-let lastWeatherSource = "";
+let lastWeatherSource = "", lastWeatherSkipped = "";
 
 export async function buildSvg(env, now = new Date(), page = 1, { single = true } = {}) {
   let back = true;
@@ -72,6 +72,7 @@ export async function buildSvg(env, now = new Date(), page = 1, { single = true 
     wantEnergy ? settle(hasEnergy(env), () => getEnergy(env, now)) : skip,
   ]);
   lastWeatherSource = weather.ok ? weather.value.source || "" : "unavailable";
+  lastWeatherSkipped = weather.ok ? (weather.value.skipped || []).join(" | ") : String(weather.error?.message || "");
   // WEATHER_PLACE (e.g. "Dagenham") is shown with the weather.
   if (weather.ok && env.WEATHER_PLACE) weather.value = { ...weather.value, place: String(env.WEATHER_PLACE).trim() };
   // A drive outside its days and hours is left out, like one that isn't set up.
@@ -127,7 +128,11 @@ export async function handle(request, env, { Resvg, fonts }) {
   let svg = await buildSvg(env, new Date(), page, { single: pageParam === null });
   // Say where the weather came from in the SVG (invisible), to check the Met
   // Office is being used: e.g. view-source on /dashboard.svg?key=...
-  if (lastWeatherSource) svg = svg.replace("<svg ", `<svg data-weather-source="${lastWeatherSource}" `);
+  const attr = t => String(t).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+  if (lastWeatherSource) {
+    const why = lastWeatherSkipped ? ` data-weather-skipped="${attr(lastWeatherSkipped)}"` : "";
+    svg = svg.replace("<svg ", `<svg data-weather-source="${attr(lastWeatherSource)}"${why} `);
+  }
   if (url.pathname.endsWith(".svg") || url.searchParams.get("format") === "svg") {
     return new Response(svg, { headers: { "content-type": "image/svg+xml", "cache-control": "no-store" } });
   }
