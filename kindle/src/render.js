@@ -93,7 +93,7 @@ function header(now, zone, weather) {
     out += text(RIGHT, 80, temp(w.now.temp), { size: 60, bold: true, anchor: "end" });
     out += text(RIGHT, 110, `${desc}, feels ${temp(w.now.feels)}`, { size: 18, anchor: "end", max: 230 });
     out += text(RIGHT, 136, w.rain ? rainText(w.rain)[0]
-      : `High ${temp(w.today.max)} · Low ${temp(w.today.min)} · ${Math.round(w.now.wind)} mph`,
+      : `High ${temp(w.today.max)} · Low ${temp(w.today.min)} · ${Math.round(w.now.wind)} mph` + (w.source === "yr.no" ? " · yr.no" : ""),
       { size: 16, fill: w.rain ? "#000" : GREY, bold: !!w.rain, anchor: "end", max: 250 });
   }
   return out + line(158);
@@ -115,7 +115,7 @@ function forecast(weather) {
     out += text(cx, 186, s.label, { size: last ? 15 : 17, bold: last, fill: last ? "#000" : GREY, anchor: "middle" });
     out += icon(describe(s.code)[1], cx - 24, 194, 48, s.day);
     out += text(cx, 266, s.top, { size: last ? 20 : 22, bold: true, anchor: "middle" });
-    out += text(cx, 288, `${s.rain ?? 0}% rain`, { size: 14, fill: GREY, anchor: "middle" });
+    out += text(cx, 288, (s.rain == null ? "– rain" : `${s.rain}% rain`), { size: 14, fill: GREY, anchor: "middle" });
   });
   // Thin divider before "Tomorrow".
   const x = M + width * (slots.length - 1);
@@ -391,8 +391,8 @@ const dateText = (now, zone) =>
 const outlook = w => {
   const [tdesc] = describe(w.tomorrow.code);
   return [
-    `Today: high ${temp(w.today.max)}, low ${temp(w.today.min)} · ${w.today.rain ?? 0}% rain`,
-    `Tomorrow: ${tdesc.toLowerCase() || "—"}, ${temp(w.tomorrow.max)}/${temp(w.tomorrow.min)} · ${w.tomorrow.rain ?? 0}% rain`,
+    `Today: high ${temp(w.today.max)}, low ${temp(w.today.min)}${w.today.rain == null ? "" : ` · ${w.today.rain}% rain`}`,
+    `Tomorrow: ${tdesc.toLowerCase() || "—"}, ${temp(w.tomorrow.max)}/${temp(w.tomorrow.min)}${w.tomorrow.rain == null ? "" : ` · ${w.tomorrow.rain}% rain`}`,
   ];
 };
 
@@ -503,7 +503,8 @@ function leftColumn(now, zone, weather) {
   out += icon(kind, x - 4, 166, 76, wv.now.day);
   out += text(x + 92, 226, temp(wv.now.temp), { size: 58, bold: true });
   out += text(x, 268, `${desc}, feels ${temp(wv.now.feels)}`, { size: 17, max: w });
-  out += text(x, 292, `High ${temp(wv.today.max)} · Low ${temp(wv.today.min)} · ${Math.round(wv.now.wind)} mph`,
+  out += text(x, 292, `High ${temp(wv.today.max)} · Low ${temp(wv.today.min)} · ` +
+    (wv.source === "yr.no" ? "via yr.no" : `${Math.round(wv.now.wind)} mph`),
     { size: 14, fill: GREY, max: w });
   out += line(310, x, COL - M);
 
@@ -518,7 +519,7 @@ function leftColumn(now, zone, weather) {
     out += text(x, y, r.label, { size: 16, fill: r.bold ? "#000" : GREY, bold: r.bold });
     out += icon(describe(r.code)[1], x + 58, y - 28, 38, r.day);
     out += text(x + 108, y, r.t, { size: 20, bold: true });
-    out += text(COL - M, y, `${r.rain ?? 0}%`, { size: 14, fill: GREY, anchor: "end" });
+    out += text(COL - M, y, (r.rain == null ? "–" : `${r.rain}%`), { size: 14, fill: GREY, anchor: "end" });
   });
   return out;
 }

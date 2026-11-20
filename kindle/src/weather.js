@@ -13,14 +13,20 @@ export async function getWeather(env) {
   const { lat, lon } = parseLatLon(env.HOME_LATLON, "HOME_LATLON");
   const key = `${lat},${lon}`;
   if (cached && cachedFor === key && Date.now() - cachedAt < CACHE_MS) return cached;
+  let fresh;
   try {
-    const fresh = await fetchWeather(env, lat, lon);
-    cached = fresh; cachedAt = Date.now(); cachedFor = key;
-    return fresh;
+    fresh = await fetchWeather(env, lat, lon);
   } catch (e) {
-    if (cached && cachedFor === key && Date.now() - cachedAt < KEEP_MS) return cached;
-    throw e;
+    // Open-Meteo refused or failed: try yr.no (MET Norway) instead.
+    try {
+      fresh = await fetchYr(env, lat, lon);
+    } catch {
+      if (cached && cachedFor === key && Date.now() - cachedAt < KEEP_MS) return cached;
+      throw e;
+    }
   }
+  cached = fresh; cachedAt = Date.now(); cachedFor = key;
+  return fresh;
 }
 
 async function fetchWeather(env, lat, lon) {
@@ -35,7 +41,11 @@ async function fetchWeather(env, lat, lon) {
     forecast_minutely_15: "48",
   });
   const w = await getJson(`https://api.open-meteo.com/v1/forecast?${q}`);
+  return summarise(w, "Open-Meteo");
+}
 
+// Turns an Open-Meteo-shaped forecast into what the dashboard shows.
+function summarise(w, source) {
   // Next five 3-hourly slots, starting from the next whole hour.
   const nowHour = w.current.time.slice(0, 13); // "2026-11-10T18"
   let start = w.hourly.time.findIndex(t => t.slice(0, 13) > nowHour);
@@ -72,6 +82,98 @@ async function fetchWeather(env, lat, lon) {
     tomorrow: day(1),
     hours,
     rain: rainAlert(w),
+    source,
+  };
+}
+
+// ---------- yr.no (MET Norway) backup ----------
+// Free, no key; MET Norway asks apps to identify themselves. Data from MET
+// Norway, CC BY 4.0. Its hourly forecast is reshaped to look like Open-Meteo's
+// (no 15-minute rain, and no chance-of-rain figure for the UK).
+const YR_AGENT = "kindle-weather-dashboard/1.0 (personal use)";
+
+// yr symbol codes -> the WMO codes describe() understands.
+function yrCode(symbol = "") {
+  const s = symbol.replace(/_(day|night|polartwilight)$/, "");
+  if (s.includes("thunder")) return 95;
+  if (s.includes("snow")) return s.includes("showers") ? 85 : 73;
+  if (s.includes("sleet")) return 66;
+  if (s.includes("rainshowers")) return 80;
+  if (s.includes("heavyrain")) return 65;
+  if (s.includes("lightrain")) return 61;
+  if (s.includes("rain")) return 63;
+  if (s === "fog") return 45;
+  if (s === "cloudy") return 3;
+  if (s === "partlycloudy") return 2;
+  if (s === "fair") return 1;
+  return 0;
+}
+const yrDay = symbol => !/_night$/.test(symbol || "");
+
+async function fetchYr(env, lat, lon) {
+  const d = await getJson(
+    `https://api.met.no/weatherapi/locationforecast/2.0/complete?lat=${(+lat).toFixed(4)}&lon=${(+lon).toFixed(4)}`,
+    { headers: { "user-agent": YR_AGENT } });
+  return summarise(fromYr(d, tz(env)), "yr.no");
+}
+
+export function fromYr(d, zone, now = new Date()) {
+  const local = ms => {
+    const p = new Intl.DateTimeFormat("en-GB", { timeZone: zone, year: "numeric", month: "2-digit", day: "2-digit",
+      hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(new Date(ms));
+    const g = t => p.find(x => x.type === t).value;
+    return `${g("year")}-${g("month")}-${g("day")}T${g("hour")}:${g("minute")}`;
+  };
+  // Hourly entries only (later ones are 6-hourly).
+  const ts = d.properties.timeseries.filter(t => t.data.next_1_hours);
+  const at = ts.map(t => Date.parse(t.time));
+  const one = i => ts[i].data.next_1_hours;
+  const inst = i => ts[i].data.instant.details;
+  const mph = ms => ms * 2.23694;
+
+  // Open-Meteo's hourly values describe the hour *ending* at their time, so the
+  // value for hour T comes from yr's "next hour" of the entry at T - 1h.
+  const hourly = { time: [], temperature_2m: [], precipitation: [], precipitation_probability: [], weather_code: [], is_day: [] };
+  for (let i = 0; i < ts.length; i++) {
+    hourly.time.push(local(at[i]));
+    hourly.temperature_2m.push(inst(i).air_temperature);
+    const prev = i > 0 ? one(i - 1) : null;
+    hourly.precipitation.push(prev ? prev.details.precipitation_amount ?? 0 : 0);
+    hourly.precipitation_probability.push(prev?.details.probability_of_precipitation ?? null);
+    hourly.weather_code.push(yrCode(one(i).summary.symbol_code));
+    hourly.is_day.push(yrDay(one(i).summary.symbol_code) ? 1 : 0);
+  }
+
+  // Today and tomorrow (local dates): high, low, the midday symbol.
+  const dates = [...new Set(hourly.time.map(t => t.slice(0, 10)))].slice(0, 2);
+  const daily = { weather_code: [], temperature_2m_max: [], temperature_2m_min: [], precipitation_probability_max: [], sunrise: [], sunset: [] };
+  for (const date of dates) {
+    const idx = hourly.time.map((t, i) => (t.startsWith(date) ? i : -1)).filter(i => i >= 0);
+    const temps = idx.map(i => hourly.temperature_2m[i]);
+    const noon = idx.find(i => hourly.time[i].slice(11, 13) === "12") ?? idx[Math.floor(idx.length / 2)];
+    const probs = idx.map(i => hourly.precipitation_probability[i]).filter(v => v != null);
+    daily.weather_code.push(hourly.weather_code[noon]);
+    daily.temperature_2m_max.push(Math.max(...temps));
+    daily.temperature_2m_min.push(Math.min(...temps));
+    daily.precipitation_probability_max.push(probs.length ? Math.max(...probs) : null);
+    daily.sunrise.push("");
+    daily.sunset.push("");
+  }
+
+  const c = inst(0);
+  const nowQuarter = Math.floor(now.getTime() / 900e3) * 900e3;
+  return {
+    current: {
+      time: local(Math.max(nowQuarter, at[0])),
+      temperature_2m: c.air_temperature,
+      apparent_temperature: c.apparent_air_temperature ?? c.air_temperature,
+      weather_code: yrCode(one(0).summary.symbol_code),
+      wind_speed_10m: mph(c.wind_speed ?? 0),
+      is_day: yrDay(one(0).summary.symbol_code) ? 1 : 0,
+      precipitation: 0,
+    },
+    hourly,
+    daily,
   };
 }
 
