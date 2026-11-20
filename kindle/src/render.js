@@ -436,10 +436,10 @@ function screensaver(now, zone, weather, notes = []) {
     out += text(236, 512, `${desc}, feels ${temp(w.now.feels)}${w.place ? ` · ${w.place}` : ""}`, { size: 22, max: WIDTH - 236 - M });
     const [rainHead, rainMore] = rainText(w.rain);
     out += text(cx, 566, rainHead, { size: 22, bold: true, anchor: "middle", max: WIDTH - 2 * M });
-    if (rainMore) out += text(cx, 594, rainMore, { size: 18, anchor: "middle", max: WIDTH - 2 * M });
+    if (rainMore) out += text(cx, 596, rainMore, { size: 21, anchor: "middle", max: WIDTH * 1.1 - 2 * M });
     const [today, tomorrow] = outlook(w);
-    out += text(cx, 640, today, { size: 19, fill: GREY, anchor: "middle", max: WIDTH - 2 * M });
-    out += text(cx, 670, tomorrow, { size: 19, fill: GREY, anchor: "middle", max: WIDTH - 2 * M });
+    out += text(cx, 644, today, { size: 23, fill: "#222", anchor: "middle", max: WIDTH * 1.1 - 2 * M });
+    out += text(cx, 678, tomorrow, { size: 23, fill: "#222", anchor: "middle", max: WIDTH * 1.1 - 2 * M });
   } else {
     out += text(cx, 470, "Weather unavailable", { size: 22, fill: GREY, anchor: "middle" });
   }
@@ -457,14 +457,14 @@ function notesScreensaver(now, zone, weather, notes, W, H) {
   const rainHead = w ? rainText(w.rain)[0] : "";
   if (wide) {
     // Clock on the left, date and weather on the right.
-    out = text(M, 150, clock(now, zone), { size: 150, bold: true });
-    const rx = 500, rw = W - M - rx;
-    out += text(rx, 46, dateText(now, zone), { size: 22, max: rw });
+    out = text(M, 146, clock(now, zone), { size: 140, bold: true });
+    const rx = 468, rw = W - M - rx;
+    out += text(rx, 40, dateText(now, zone), { size: 23, max: rw * 1.12 });
     if (w) {
-      out += icon(kind, rx - 4, 58, 62, w.now.day);
-      out += text(rx + 70, 108, temp(w.now.temp), { size: 50, bold: true });
-      out += text(rx, 140, `${desc}, feels ${temp(w.now.feels)}`, { size: 17, max: rw });
-      out += text(rx, 166, rainHead.replace("No rain expected", "No rain"), { size: 17, bold: true, max: rw * 1.15 });
+      out += icon(kind, rx - 4, 50, 62, w.now.day);
+      out += text(rx + 70, 102, temp(w.now.temp), { size: 54, bold: true });
+      out += text(rx, 136, `${desc}, feels ${temp(w.now.feels)}`, { size: 21, max: rw * 1.12 });
+      out += text(rx, 164, rainHead.replace("No rain expected", "No rain"), { size: 21, bold: true, max: rw * 1.15 });
     }
     top = 182;
   } else {
@@ -472,8 +472,8 @@ function notesScreensaver(now, zone, weather, notes, W, H) {
     out = text(cx, 170, clock(now, zone), { size: 150, bold: true, anchor: "middle" });
     out += text(cx, 214, dateText(now, zone), { size: 26, anchor: "middle" });
     if (w) {
-      out += text(cx, 262, `${temp(w.now.temp)} · ${desc}, feels ${temp(w.now.feels)}`, { size: 24, anchor: "middle", max: W - 2 * M });
-      out += text(cx, 294, rainHead, { size: 20, bold: true, anchor: "middle", max: W - 2 * M });
+      out += text(cx, 262, `${temp(w.now.temp)} · ${desc}, feels ${temp(w.now.feels)}`, { size: 26, anchor: "middle", max: W - 2 * M });
+      out += text(cx, 296, rainHead, { size: 24, bold: true, anchor: "middle", max: W * 1.1 - 2 * M });
     }
     top = 316;
   }
@@ -647,20 +647,20 @@ function landscapeScreensaver(now, zone, weather, notes = []) {
   if (notes.length) return notesScreensaver(now, zone, weather, notes, L_WIDTH, L_HEIGHT);
   const cx = L_WIDTH / 2;
   let out = text(cx, 230, clock(now, zone), { size: 210, bold: true, anchor: "middle" });
-  out += text(cx, 290, dateText(now, zone), { size: 30, anchor: "middle" });
-  out += line(326, 100, L_WIDTH - 100);
+  out += text(cx, 280, dateText(now, zone), { size: 30, anchor: "middle" });
+  out += line(310, 100, L_WIDTH - 100);
   if (weather.ok) {
     const w = weather.value;
     const [desc, kind] = describe(w.now.code);
-    out += icon(kind, 170, 344, 104, w.now.day);
-    out += text(300, 424, temp(w.now.temp), { size: 84, bold: true });
-    out += text(300, 458, `${desc}, feels ${temp(w.now.feels)}${w.place ? ` · ${w.place}` : ""}`, { size: 22, max: L_WIDTH - 300 - M });
+    out += icon(kind, 170, 322, 100, w.now.day);
+    out += text(300, 398, temp(w.now.temp), { size: 80, bold: true });
+    out += text(300, 432, `${desc}, feels ${temp(w.now.feels)}${w.place ? ` · ${w.place}` : ""}`, { size: 23, max: L_WIDTH - 300 - M });
     const [rainHead, rainMore] = rainText(w.rain);
-    out += text(cx, 492, rainHead, { size: 22, bold: true, anchor: "middle", max: L_WIDTH - 2 * M });
-    if (rainMore) out += text(cx, 516, rainMore, { size: 17, anchor: "middle", max: L_WIDTH - 2 * M });
+    out += text(cx, 470, rainHead, { size: 24, bold: true, anchor: "middle", max: L_WIDTH - 2 * M });
+    if (rainMore) out += text(cx, 498, rainMore, { size: 20, anchor: "middle", max: L_WIDTH * 1.1 - 2 * M });
     const [today, tomorrow] = outlook(w);
-    out += text(cx, 545, today, { size: 17, fill: GREY, anchor: "middle" });
-    out += text(cx, 569, tomorrow, { size: 17, fill: GREY, anchor: "middle" });
+    out += text(cx, 532, today, { size: 21, fill: "#222", anchor: "middle", max: L_WIDTH * 1.1 - 2 * M });
+    out += text(cx, 562, tomorrow, { size: 21, fill: "#222", anchor: "middle", max: L_WIDTH * 1.1 - 2 * M });
   } else {
     out += text(cx, 440, "Weather unavailable", { size: 22, fill: GREY, anchor: "middle" });
   }
