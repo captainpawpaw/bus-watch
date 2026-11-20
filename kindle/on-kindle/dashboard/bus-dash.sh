@@ -43,9 +43,13 @@ find_touch() {
 # the screen only reports real taps or sends events all the time.
 watch_taps() {
   logged=0
+  watch_start=$(date +%s)
   while true; do
     if dd if="$1" of=/dev/null bs=16 count=1 2>/dev/null; then
       t=$(date +%s)
+      # Ignore the first 15 seconds: the finger that tapped "Bus Dashboard" to
+      # start it is still reported, and would hold page 1 for TAP_HOLD_SECONDS.
+      [ $((t - watch_start)) -lt 15 ] && continue
       echo "$t" >"$TAP_FILE"
       if [ $((t - logged)) -ge 10 ]; then
         log "tap"
