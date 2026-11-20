@@ -2,28 +2,41 @@
 //
 // BUS_STOPS lists stops separated by ";". Each is a TfL stop ID, optionally
 // followed by ":" and the routes to show, and "@" and your walk to it in minutes,
-// e.g. "490008458N:62@7; 490008457N:368@10". Without "@", BUS_WALK_MINUTES is used.
+// then optionally the days and hours to show it,
+// e.g. "490008458N:62@7; 490008457S:368@12 Sat-Sun 08:00-10:00".
+// Without "@", BUS_WALK_MINUTES is used. Stops without their own hours follow
+// BUS_HOURS (or always show, if that isn't set).
 import { getJson } from "./util.js";
+import { inWindow } from "./driving.js";
 
 export function parseStops(text) {
   // Forgiving: stray spaces, underscores or quotes around an ID are ignored,
   // and stops can also be on separate lines.
   const clean = t => t.replace(/[^0-9A-Za-z]/g, "");
   return String(text || "").split(/[;\n]/).map(s => s.trim()).filter(Boolean).map(s => {
-    const [main, walk] = s.split("@");
+    const [main, after = ""] = s.split("@");
     const [id, routes] = main.split(":");
-    const mins = parseFloat(walk);
+    // After "@": the walk in minutes, then optionally "days times".
+    const m = after.trim().match(/^([\d.]+)\s*(.*)$/);
+    const mins = m ? parseFloat(m[1]) : NaN;
     return {
       id: clean(id).toUpperCase(),
       routes: routes ? routes.split(",").map(r => clean(r).toLowerCase()).filter(Boolean) : [],
       walk: Number.isFinite(mins) ? mins : null,
+      hours: m && m[2].trim() ? m[2].trim() : null,
     };
   }).filter(s => s.id);
 }
 
+// Whether a stop is shown now: its own hours, else BUS_HOURS, else always.
+export function stopShown(stop, env, now = new Date()) {
+  if (stop.hours) return inWindow(stop.hours, env, now);
+  return !env.BUS_HOURS || inWindow(env.BUS_HOURS, env, now);
+}
+
 export async function getBuses(env, now) {
-  const stops = parseStops(env.BUS_STOPS);
-  if (!stops.length) throw new Error("BUS_STOPS is not set");
+  if (!parseStops(env.BUS_STOPS).length) throw new Error("BUS_STOPS is not set");
+  const stops = parseStops(env.BUS_STOPS).filter(s => stopShown(s, env, now));
   const key = env.TFL_APP_KEY ? `?app_key=${encodeURIComponent(env.TFL_APP_KEY)}` : "";
   const walk = Number(env.BUS_WALK_MINUTES) || 0;
 

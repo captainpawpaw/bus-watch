@@ -1,7 +1,7 @@
 // Gathers everything and draws it. Platform-neutral: the caller supplies resvg
 // (the SVG -> pixels renderer) and the font files.
 import { getWeather } from "./weather.js";
-import { getBuses } from "./buses.js";
+import { getBuses, parseStops, stopShown } from "./buses.js";
 import { getDrive, hasDrives, inDriveWindow, inWindow, activeJourney } from "./driving.js";
 import { getEnergy } from "./energy.js";
 import { renderSvg, WIDTH, HEIGHT } from "./render.js";
@@ -42,8 +42,10 @@ export function isScreensaverTime(env, now = new Date()) {
 
 // page 1: clock, weather, buses, drive. page 2: clock, weather, energy.
 // Without ?page (the old single-page layout), energy sits at the bottom of page 1.
-// BUS_HOURS, e.g. "Mon-Fri 04:30-10:00": when bus times are shown. Not set: always.
-export const busHours = (env, now = new Date()) => !env.BUS_HOURS || inWindow(env.BUS_HOURS, env, now);
+// Whether any stop is shown now (each stop has its own hours, or BUS_HOURS,
+// e.g. "Mon-Fri 04:30-10:00", or always).
+export const busHours = (env, now = new Date()) =>
+  parseStops(env.BUS_STOPS).some(stop => stopShown(stop, env, now));
 const driveNow = (env, now) => hasDrives(env) && !!activeJourney(env, now);
 
 // Outside bus hours and outside any drive, page 1 has nothing of its own, so it
