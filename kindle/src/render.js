@@ -420,7 +420,7 @@ function rainBox(r, x, top, right) {
 }
 
 // The night screensaver: a big clock, the date and a little weather.
-function screensaver(now, zone, weather) {
+function screensaver(now, zone, weather, notes = []) {
   const cx = WIDTH / 2;
   let out = text(cx, 250, clock(now, zone), { size: 176, bold: true, anchor: "middle" });
   out += text(cx, 312, dateText(now, zone), { size: 30, anchor: "middle" });
@@ -441,7 +441,9 @@ function screensaver(now, zone, weather) {
   } else {
     out += text(cx, 470, "Weather unavailable", { size: 22, fill: GREY, anchor: "middle" });
   }
-  out += text(cx, HEIGHT - 30, "Tap to wake", { size: 18, fill: GREY, anchor: "middle" });
+  // With notes, they take the place of "Tap to wake" at the bottom.
+  if (notes.length) out += line(690, 60, WIDTH - 60) + notesBox(notes, 60, 692, HEIGHT - 10, WIDTH - 120, { heading: false, size: 21, maxLines: 1 });
+  else out += text(cx, HEIGHT - 30, "Tap to wake", { size: 18, fill: GREY, anchor: "middle" });
   return out;
 }
 
@@ -485,6 +487,48 @@ function energyPage(power, top, buttonY) {
     : "";
   return both + energyBlock("Electric", e.electric, e, top) + line(top + 222) +
     energyBlock("Gas", e.gas, e, top + 222) + (buttonY === null ? "" : backButton(buttonY));
+}
+
+// ---------- notice board ----------
+// Splits text into lines that fit (the width estimate is cautious, hence * 1.1).
+function wrap(s, size, maxWidth, bold = false) {
+  const words = String(s).split(/\s+/).filter(Boolean), lines = [];
+  for (const w of words) {
+    const last = lines.length ? lines[lines.length - 1] : null;
+    if (last !== null && textWidth(`${last} ${w}`, size, bold) <= maxWidth * 1.1) lines[lines.length - 1] = `${last} ${w}`;
+    else lines.push(w);
+  }
+  return lines;
+}
+
+// The newest notes that fit between top and bottom, each with a bullet and
+// up to two lines; "+ N more" if some don't fit. Returns "" with no notes.
+function notesBox(notes, x, top, bottom, width, { size = 20, heading: withHeading = true, maxLines = 2 } = {}) {
+  if (!notes || !notes.length) return "";
+  const rowH = Math.round(size * 1.35);
+  let y = top, out = "";
+  if (withHeading) { y += 22; out += heading(y, "Notes").replace(`x="${M}"`, `x="${x}"`); y += 8; }
+  const room = (width - 20) * 1.1;
+  const rows = notes.map(n => {
+    let lines = wrap(n.text, size, width - 20, true);
+    if (lines.length > maxLines) lines = [...lines.slice(0, maxLines - 1), fit(lines.slice(maxLines - 1).join(" "), size, room, true)];
+    return lines;
+  });
+  // If they don't all fit, keep a line for "+ N more".
+  const total = rows.reduce((t, l) => t + l.length * rowH, 0);
+  const limit = y + total <= bottom ? bottom : bottom - rowH;
+  let shown = 0;
+  for (let lines of rows) {
+    // Short of room, a long note is cut to one line rather than left out.
+    if (y + lines.length * rowH > limit && lines.length > 1) lines = [fit(lines.join(" "), size, room, true)];
+    if (y + lines.length * rowH > limit) break;
+    out += `<circle cx="${x + 5}" cy="${y + rowH - 4 - size * 0.36}" r="4" fill="#000"/>`;
+    lines.forEach((l, i) => { out += text(x + 20, y + rowH - 4 + i * rowH, l, { size, bold: true }); });
+    y += lines.length * rowH;
+    shown++;
+  }
+  if (shown < notes.length) out += text(x + 20, y + rowH - 4, `+ ${notes.length - shown} more on the notice board`, { size: size - 3, fill: GREY });
+  return out;
 }
 
 // ---------- landscape (800 x 600) ----------
@@ -550,9 +594,11 @@ function travelLandscape(bus, car, power, zone) {
   return out;
 }
 
-function landscapeScreensaver(now, zone, weather) {
+function landscapeScreensaver(now, zone, weather, notes = []) {
   const cx = L_WIDTH / 2;
-  let out = text(cx, 230, clock(now, zone), { size: 210, bold: true, anchor: "middle" });
+  const up = notes.length ? 70 : 0; // room for the notes at the bottom
+  let out = text(cx, notes.length ? 186 : 230, clock(now, zone), { size: notes.length ? 172 : 210, bold: true, anchor: "middle" });
+  out += `<g transform="translate(0 ${-up})">`;
   out += text(cx, 290, dateText(now, zone), { size: 30, anchor: "middle" });
   out += line(326, 100, L_WIDTH - 100);
   if (weather.ok) {
@@ -570,14 +616,20 @@ function landscapeScreensaver(now, zone, weather) {
   } else {
     out += text(cx, 440, "Weather unavailable", { size: 22, fill: GREY, anchor: "middle" });
   }
-  out += text(cx, L_HEIGHT - 8, "Tap to wake", { size: 13, fill: GREY, anchor: "middle" });
+  out += "</g>";
+  // With notes, they take the place of "Tap to wake" at the bottom.
+  if (notes.length) out += line(512, 100, L_WIDTH - 100) + notesBox(notes, 100, 512, 594, L_WIDTH - 200, { heading: false, size: 19, maxLines: 1 });
+  else out += text(cx, L_HEIGHT - 8, "Tap to wake", { size: 13, fill: GREY, anchor: "middle" });
   return out;
 }
 
-function renderLandscape({ now, zone, weather, bus, car, power, page, back = true }) {
-  if (page === 0) return svgDoc(landscapeScreensaver(now, zone, weather), L_WIDTH, L_HEIGHT);
+function renderLandscape({ now, zone, weather, bus, car, power, notes = [], page, back = true }) {
+  if (page === 0) return svgDoc(landscapeScreensaver(now, zone, weather, notes), L_WIDTH, L_HEIGHT);
+  // Notes go under the energy figures, above the button.
+  const notesSvg = notes.length
+    ? line(462) + notesBox(notes, M, 462, back ? INNER_H - 66 : INNER_H - 14, WIDTH - 2 * M, { size: 22 }) : "";
   const right = page === 2
-    ? `<g transform="translate(${COL} 0) scale(${SCALE.toFixed(4)})">${energyPage(power, 12, back ? INNER_H - 56 : null)}</g>`
+    ? `<g transform="translate(${COL} 0) scale(${SCALE.toFixed(4)})">${energyPage(power, 12, back ? INNER_H - 56 : null)}${notesSvg}</g>`
     : travelLandscape(bus, car, power, zone);
   const body = leftColumn(now, zone, weather) +
     `<line x1="${COL}" y1="${M}" x2="${COL}" y2="${L_HEIGHT - M}" stroke="#000" stroke-width="2"/>` + right;
@@ -588,9 +640,14 @@ function renderLandscape({ now, zone, weather, bus, car, power, page, back = tru
 // landscape: draw 800 x 600 instead of 600 x 800 (rotating for the Kindle happens later).
 // back: show the "Tap for buses" button on the energy page (not when it stands
 // in for the bus page outside bus hours).
-export function renderSvg({ now, zone, weather, bus, car, power, page = 1, landscape = false, back = true }) {
-  if (landscape) return renderLandscape({ now, zone, weather, bus, car, power, page, back });
-  if (page === 0) return svgDoc(screensaver(now, zone, weather));
+export function renderSvg({ now, zone, weather, bus, car, power, notes = [], page = 1, landscape = false, back = true }) {
+  if (landscape) return renderLandscape({ now, zone, weather, bus, car, power, notes, page, back });
+  if (page === 0) return svgDoc(screensaver(now, zone, weather, notes));
+  // Upright, the energy page has no spare room, so notes take the place of the hourly forecast.
+  if (page === 2 && notes.length) {
+    return svgDoc(header(now, zone, weather) + notesBox(notes, M, 158, 292, WIDTH - 2 * M) + line(296) +
+      energyPage(power, 298, back ? HEIGHT - 52 : null));
+  }
   const top = header(now, zone, weather) + forecast(weather);
   if (page === 2) return svgDoc(top + energyPage(power, 298, back ? HEIGHT - 52 : null));
   // (Without the page 2 setup, energy still shows on page 1 at the bottom.)

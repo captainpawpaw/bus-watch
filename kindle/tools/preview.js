@@ -3,6 +3,7 @@
 //   npm run preview            -> live data
 //   npm run preview -- --demo  -> made-up data, no keys needed
 //   add --page 2 for the energy page (--page 1 for the bus page, --page 0 for the screensaver)
+//   add --notes to include made-up notice board notes
 //   add --landscape to draw it on its side (as ORIENTATION=landscape-right does),
 //   and --kindle to save it turned the way the Kindle receives it
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
@@ -40,6 +41,13 @@ function demoSvg(page, single) {
   const bus = (route, towards, mins) => ({ route, towards, buses: mins.map(m => ({ mins: m, at: at(m) })) });
   return renderSvg({
     now, zone: "Europe/London", page, landscape: orientation(env).landscape,
+    // --notes shows some made-up notes on the notice board.
+    notes: process.argv.includes("--notes") ? [
+      { text: "Bins out tonight, recycling week" },
+      { text: "Dentist Thursday 4:15pm, bring the forms from the drawer in the kitchen and the new insurance card" },
+      { text: "Gas meter reading due" },
+      { text: "Mum's birthday Sunday" },
+    ] : [],
     weather: { ok: true, value: {
       now: { temp: 11.4, feels: 9.2, code: 2, wind: 9, day: true },
       today: { max: 13, min: 6 }, tomorrow: { code: 61, max: 12, min: 7, rain: 70 },

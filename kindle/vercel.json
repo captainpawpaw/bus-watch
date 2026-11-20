@@ -18,6 +18,10 @@
       "destination": "/api/dashboard?format=svg"
     },
     {
+      "source": "/notes",
+      "destination": "/api/dashboard?format=notes"
+    },
+    {
       "source": "/view",
       "destination": "/api/dashboard?format=html"
     }

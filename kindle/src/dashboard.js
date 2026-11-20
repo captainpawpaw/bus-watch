@@ -4,6 +4,7 @@ import { getWeather } from "./weather.js";
 import { getBuses, parseStops, stopShown } from "./buses.js";
 import { getDrive, hasDrives, inDriveWindow, inWindow, activeJourney } from "./driving.js";
 import { getEnergy } from "./energy.js";
+import { getNotes, hasNotes, handleNotes } from "./notes.js";
 import { renderSvg, WIDTH, HEIGHT } from "./render.js";
 import { greyPng, rotate } from "./png.js";
 import { tz, localParts } from "./util.js";
@@ -65,11 +66,14 @@ export async function buildSvg(env, now = new Date(), page = 1, { single = true 
   // bus times outside bus hours (under the drive).
   const wantEnergy = page === 2 || (page === 1 && (single || !buses));
   const skip = Promise.resolve({ ok: false, missing: true });
-  const [weather, bus, car, power] = await Promise.all([
+  // Notes go on the energy page and the screensaver.
+  const wantNotes = (page === 0 || page === 2) && hasNotes(env);
+  const [weather, bus, car, power, notes] = await Promise.all([
     settle(true, () => getWeather(env)),
     wantBus ? settle(true, () => getBuses(env, now)) : skip,
     wantDrive ? settle(hasDrives(env), () => getDrive(env, now)) : skip,
     wantEnergy ? settle(hasEnergy(env), () => getEnergy(env, now)) : skip,
+    wantNotes ? getNotes(env, now).catch(e => { console.error(e); return []; }) : [],
   ]);
   lastWeatherSource = weather.ok ? weather.value.source || "" : "unavailable";
   lastWeatherSkipped = weather.ok ? (weather.value.skipped || []).join(" | ") : String(weather.error?.message || "");
@@ -77,7 +81,7 @@ export async function buildSvg(env, now = new Date(), page = 1, { single = true 
   if (weather.ok && env.WEATHER_PLACE) weather.value = { ...weather.value, place: String(env.WEATHER_PLACE).trim() };
   // A drive outside its days and hours is left out, like one that isn't set up.
   const drive = car.ok && car.value === null ? { ok: false, missing: true } : car;
-  return renderSvg({ now, zone: tz(env), weather, bus, car: drive, power, page, back, landscape: orientation(env).landscape });
+  return renderSvg({ now, zone: tz(env), weather, bus, car: drive, power, notes, page, back, landscape: orientation(env).landscape });
 }
 
 // turn: "cw" or "ccw" to rotate a landscape picture for the Kindle (see png.js).
@@ -102,6 +106,9 @@ export async function handle(request, env, { Resvg, fonts }) {
   }
   if (url.searchParams.get("key") !== env.DASH_TOKEN) {
     return new Response("Add ?key=<your DASH_TOKEN> to the address.", { status: 401 });
+  }
+  if (url.pathname.endsWith("/notes") || url.searchParams.get("format") === "notes") {
+    return handleNotes(request, env, url.searchParams.get("key"));
   }
   if (url.pathname.endsWith("/view") || url.searchParams.get("format") === "html") {
     return new Response(viewerPage(url.searchParams.get("key")), {
