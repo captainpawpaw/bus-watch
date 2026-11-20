@@ -7,6 +7,7 @@ Turns an old e-ink Kindle into a wall dashboard showing:
 - live TfL bus times for your stops, and when to leave for whichever bus you need to set off for first
 - drive time and arrival time with live traffic for journeys at set times, a small route map, and roadworks and incidents on the route
 - gas and electricity use from your smart meter (yesterday, today so far, and the last 7 days)
+- a notice board: notes you add from your phone or by email, on the energy page and the screensaver
 
 ![Example dashboard](example.png)
 
@@ -41,6 +42,9 @@ Any section you don't set up is left out, and the buses get the space.
 | `ORIENTATION` | Optional. `portrait` (the default), `landscape-right` (Kindle on its side, charging port on the right) or `landscape-left` (port on the left). Landscape puts the clock and weather in a column on the left. | e.g. `landscape-right` |
 | `GLOW_USERNAME`, `GLOW_PASSWORD` | Your smart meter, via the free **Bright** app (works with any UK supplier) | Install Bright (by Hildebrand), sign up and link your meter. Use that email and password. |
 | `METOFFICE_KEY` | Optional (Secret). Makes the Met Office the first weather source, with Open-Meteo and then yr.no as backups. Free: Weather DataHub, "Site-specific – Global Spot" plan (360 calls a day; this uses about 96). | datahub.metoffice.gov.uk → register → subscribe to Global Spot → copy the API key |
+| `KV_REST_API_URL`, `KV_REST_API_TOKEN` | Optional. Storage for the notice board. Set automatically when you connect an Upstash for Redis database (see "Notice board" below). | |
+| `NOTES_FROM` | Optional. The email addresses allowed to add notes by email, separated by commas. Others are ignored. | e.g. `me@gmail.com, partner@gmail.com` |
+| `NOTES_EMAIL_DAYS` | Optional. How many days an emailed note shows for. Default 7. | e.g. `3` |
 | `TFL_APP_KEY` | Optional. Only needed if TfL starts refusing requests. | api-portal.tfl.gov.uk |
 | `TIMEZONE` | Optional. Defaults to `Europe/London`. | |
 
@@ -115,9 +119,30 @@ update loop isn't used. The Kindle stays awake the whole time, so **keep it plug
 the Kindle's drive (connect it by USB). It lists the input devices it found and which one it watches
 for taps. If it picked the wrong one, set `TOUCH_DEVICE` in `local/env.sh`.
 
+## Notice board
+
+Short notes shown on the energy page (under the figures, or in place of the hourly forecast when
+upright) and at the bottom of the screensaver, newest first.
+
+**Set up the storage (free):** in Vercel, open the project → **Storage** → **Create Database** →
+**Upstash for Redis** (free plan) → create it and **Connect** it to this project. That adds
+`KV_REST_API_URL` and `KV_REST_API_TOKEN`. Then redeploy.
+
+**Add notes from your phone:** open `https://YOUR-PROJECT.vercel.app/notes?key=YOUR_DASH_TOKEN` and add
+it to your home screen. Type a note, choose how long it shows (today, until tomorrow night, a week, a
+month, or until removed) and tap **Add**. Tap ✕ to remove one.
+
+**Add notes by email (optional):** sign up at postmarkapp.com (free plan, 100 emails a month), create a
+server, and open its **Default Inbound Stream** → Settings. Set the **Webhook URL** to
+`https://YOUR-PROJECT.vercel.app/notes?key=YOUR_DASH_TOKEN&email=1` and copy the inbound address it shows
+(like `abc123@inbound.postmarkapp.com`). Set `NOTES_FROM` in Vercel to your own email address(es) so
+nobody else can post. Then email that address: the subject is the note, plus the first line of the
+message if there is one. Emailed notes show for 7 days (`NOTES_EMAIL_DAYS`).
+
 ## Changing the dashboard
 
-- **Preview with made-up data:** `npm install`, then `npm run demo`. This writes `preview.png`.
+- **Preview with made-up data:** `npm install`, then `npm run demo`. This writes `preview.png`
+  (add `-- --page 2 --notes` for the energy page with some notes).
 - **Preview with your real data:** put your settings in a `.env` file in this folder
   (`NAME=value`, one per line; it's ignored by git), then `npm run preview`.
 - **Watch it live on a phone or computer:** `https://YOUR-PROJECT.vercel.app/view?key=YOUR_DASH_TOKEN`
@@ -126,4 +151,4 @@ for taps. If it picked the wrong one, set `TOUCH_DEVICE` in `local/env.sh`.
   Without `&page`, energy goes at the bottom of a single page, as before.
 - The layout is in `src/render.js`; each data source has its own file in `src/`.
 
-Data: TfL Open Data, the Met Office (if `METOFFICE_KEY` is set), Open-Meteo and yr.no / MET Norway (CC BY 4.0) as backups, TomTom and Bright (Glowmarkt). Font: Inter (SIL Open Font Licence, `fonts/OFL.txt`).
+Data: TfL Open Data, the Met Office (if `METOFFICE_KEY` is set), Open-Meteo and yr.no / MET Norway (CC BY 4.0) as backups, TomTom, Bright (Glowmarkt) and Upstash (notes). Font: Inter (SIL Open Font Licence, `fonts/OFL.txt`).
