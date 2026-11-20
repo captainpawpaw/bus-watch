@@ -322,6 +322,13 @@ function latestDay(f) {
   return -1;
 }
 const dayLabel = (i, names) => (i === 5 ? "Yesterday" : names ? names[i] : "");
+const pounds = p => `£${(p / 100).toFixed(2)}`;
+// Totals over the 7 days in the chart; pence is null if Bright has no costs.
+function weekTotal(f) {
+  const kwh = f.kwh.reduce((t, v) => t + (v || 0), 0);
+  const costs = (f.pence || []).filter(v => v != null);
+  return { kwh, pence: costs.length ? costs.reduce((t, v) => t + v, 0) : null };
+}
 
 function energyBlock(name, f, days, top, names) {
   let y = top + 24;
@@ -332,9 +339,13 @@ function energyBlock(name, f, days, top, names) {
   out += text(M, y + 36, last < 0 ? "No readings yet"
     : `${dayLabel(last, names)} ${f.kwh[last].toFixed(1)} kWh${cost(last)}`,
     { size: 26, bold: true, max: WIDTH - 2 * M });
-  out += text(M, y + 60, today > 0 ? `Today so far ${today.toFixed(1)} kWh${cost(6)}`
-    : "Today: no data yet (Bright is usually a day behind)",
-    { size: 17, fill: GREY, max: WIDTH - 2 * M });
+  // The last 7 days' spend (including standing charges) and use, as in the chart.
+  const week = weekTotal(f);
+  const parts = [];
+  if (week.pence !== null) parts.push(`Last 7 days: ${pounds(week.pence)}`);
+  parts.push(`${week.kwh.toFixed(0)} kWh`);
+  if (today > 0) parts.push(`today so far ${today.toFixed(1)} kWh`);
+  out += text(M, y + 60, parts.join(" · "), { size: 17, fill: GREY, max: WIDTH - 2 * M });
 
   // Last 7 days as bars with their values, the latest full day in black.
   const chartTop = y + 92, chartH = 76, max = Math.max(...f.kwh.map(v => v || 0), 0.1);
@@ -419,7 +430,12 @@ function travel(bus, car, power, zone, top, bottom) {
 function energyPage(power, top, buttonY) {
   if (!power.ok) return heading(top + 22, "Energy") + unavailable(top + 52, "Smart meter", power.error);
   const e = power.value;
-  return energyBlock("Electric", e.electric, e.days, top, e.dayNames) + line(top + 222) +
+  // Both fuels together, top right.
+  const totals = [e.electric, e.gas].filter(Boolean).map(weekTotal).map(t => t.pence).filter(p => p !== null);
+  const both = totals.length === 2
+    ? text(RIGHT, top + 24, `Gas + electric, last 7 days: ${pounds(totals[0] + totals[1])}`, { size: 16, bold: true, anchor: "end" })
+    : "";
+  return both + energyBlock("Electric", e.electric, e.days, top, e.dayNames) + line(top + 222) +
     energyBlock("Gas", e.gas, e.days, top + 222, e.dayNames) + backButton(buttonY);
 }
 
