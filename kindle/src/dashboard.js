@@ -2,7 +2,7 @@
 // (the SVG -> pixels renderer) and the font files.
 import { getWeather } from "./weather.js";
 import { getBuses } from "./buses.js";
-import { getDrive, hasDrives } from "./driving.js";
+import { getDrive, hasDrives, inDriveWindow } from "./driving.js";
 import { getEnergy } from "./energy.js";
 import { renderSvg, WIDTH, HEIGHT } from "./render.js";
 import { greyPng, rotate } from "./png.js";
@@ -25,9 +25,13 @@ export function orientation(env) {
 
 // Screensaver hours, e.g. SCREENSAVER="00:00-06:00" (the default) or "22:30-06:00",
 // or "off". Times are in the dashboard's time zone and can cross midnight.
+// SCREENSAVER=outside-drives shows it at all times except during the timed
+// journeys (DRIVE_1, DRIVE_2, ...), so the full dashboard only appears then
+// (or for a few minutes after a tap).
 export function isScreensaverTime(env, now = new Date()) {
   const setting = String(env.SCREENSAVER ?? "00:00-06:00").trim().toLowerCase();
   if (setting === "off" || setting === "") return false;
+  if (setting === "outside-drives") return !inDriveWindow(env, now);
   const m = setting.match(/^(\d{1,2})[:.](\d{2})\s*-\s*(\d{1,2})[:.](\d{2})$/);
   if (!m) return false;
   const start = +m[1] * 60 + +m[2], end = +m[3] * 60 + +m[4];

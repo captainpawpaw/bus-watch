@@ -75,6 +75,28 @@ export function activeJourney(env, now) {
   return null;
 }
 
+// Whether now is inside one of the timed journeys' windows (DRIVE_1, DRIVE_2, ...).
+// Used for SCREENSAVER=outside-drives. A badly written journey is just skipped.
+export function inDriveWindow(env, now = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: tz(env), weekday: "short", hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+  }).formatToParts(now);
+  const get = t => parts.find(p => p.type === t).value;
+  const day = DAYS.indexOf(get("weekday").toLowerCase().slice(0, 3));
+  const mins = +get("hour") * 60 + +get("minute");
+  for (let i = 1; i <= 9; i++) {
+    const text = env[`DRIVE_${i}`];
+    if (!text) continue;
+    try {
+      const j = parseJourney(text, `DRIVE_${i}`);
+      if (j.days.has(day) && mins >= j.start && mins <= j.end) return true;
+    } catch {
+      // skip it
+    }
+  }
+  return false;
+}
+
 export const hasDrives = env =>
   !!(env.TOMTOM_KEY && env.DRIVE_FROM &&
     (env.DRIVE_TO || [1, 2, 3, 4, 5, 6, 7, 8, 9].some(i => env[`DRIVE_${i}`])));
