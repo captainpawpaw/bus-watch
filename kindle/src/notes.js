@@ -9,11 +9,20 @@ const MAX_NOTES = 20, MAX_LENGTH = 200;
 const CACHE_MS = 20 * 1000;
 let cached = null, cachedAt = 0;
 
+// Vercel may add a prefix to the names (e.g. STORAGE_KV_REST_API_URL), so any
+// setting ending in KV_REST_API_URL or REDIS_REST_URL is used, with its token.
 const store = env => {
-  const url = env.KV_REST_API_URL || env.UPSTASH_REDIS_REST_URL;
-  const token = env.KV_REST_API_TOKEN || env.UPSTASH_REDIS_REST_TOKEN;
-  return url && token ? { url: String(url).trim().replace(/\/$/, ""), token: String(token).trim() } : null;
+  for (const [urlEnd, tokenEnd] of [["KV_REST_API_URL", "KV_REST_API_TOKEN"], ["REDIS_REST_URL", "REDIS_REST_TOKEN"]]) {
+    for (const name of Object.keys(env).filter(n => n.toUpperCase().endsWith(urlEnd)).sort((a, b) => a.length - b.length)) {
+      const url = env[name], token = env[name.slice(0, -urlEnd.length) + tokenEnd]
+        ?? env[name.slice(0, -urlEnd.length) + tokenEnd.toLowerCase()];
+      if (url && token) return { url: String(url).trim().replace(/\/$/, ""), token: String(token).trim() };
+    }
+  }
+  return null;
 };
+// The names of settings that look like storage, to help when it isn't found.
+export const storageNames = env => Object.keys(env).filter(n => /KV|REDIS|UPSTASH/i.test(n)).sort();
 export const hasNotes = env => !!store(env);
 
 async function redis(env, ...command) {
@@ -148,7 +157,7 @@ export async function handleNotes(request, env, key) {
     status, headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
   });
   if (!hasNotes(env)) {
-    return html(`<p style="font:18px system-ui;padding:16px">The notice board needs storage: in Vercel open the project → Storage → create an Upstash for Redis database and connect it to this project, then redeploy.</p>`, 500);
+    return html(`<p style="font:18px system-ui;padding:16px">The notice board needs storage: in Vercel open the project → Storage → create an Upstash for Redis database and connect it to this project, then redeploy.</p><p style="font:14px system-ui;padding:0 16px;color:#666">Storage settings found: ${esc(storageNames(env).join(", ") || "none")}</p>`, 500);
   }
   const url = new URL(request.url);
   if (request.method === "POST") {
