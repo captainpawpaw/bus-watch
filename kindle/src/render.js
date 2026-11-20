@@ -355,11 +355,14 @@ function energyBlock(name, f, e, top) {
     { size: 26, bold: true, max: WIDTH - 2 * M });
   // This calendar week's spend (including standing charges) and use, as in the Bright app.
   const week = weekTotal(f, e);
-  const parts = [];
-  if (week.pence !== null) parts.push(`This week: ${pounds(week.pence)}`);
-  parts.push(`${week.kwh.toFixed(0)} kWh`);
-  if (today > 0) parts.push(`today so far ${today.toFixed(1)} kWh`);
-  out += text(M, y + 60, parts.join(" · "), { size: 17, fill: GREY, max: WIDTH - 2 * M });
+  // The week's cost in bold black, as it's the figure most worth reading.
+  const lead = week.pence !== null ? `This week ${pounds(week.pence)}` : `This week ${week.kwh.toFixed(0)} kWh`;
+  const rest = [];
+  if (week.pence !== null) rest.push(`${week.kwh.toFixed(0)} kWh`);
+  if (today > 0) rest.push(`today ${today.toFixed(1)} kWh`);
+  const restText = rest.length ? fit(`\u00a0· ${rest.join(" · ")}`, 19, WIDTH * 1.1 - 2 * M - textWidth(lead, 21, true)) : "";
+  out += `<text x="${M}" y="${y + 63}" font-size="21" font-weight="700" fill="#000">${esc(lead)}` +
+    (restText ? `<tspan font-size="19" font-weight="400" fill="#333">${esc(restText)}</tspan>` : "") + `</text>`;
 
   // This week, Monday to Sunday, as bars with their values, the latest full day in black.
   const week7 = weekDays(e);
