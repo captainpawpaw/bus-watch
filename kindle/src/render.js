@@ -294,18 +294,21 @@ function energy(result, top) {
     }
     const kwh = i => f.kwh[i];
     const cost = i => (f.pence && f.pence[i] != null ? `£${(f.pence[i] / 100).toFixed(2)}` : "");
-    const last = latestDay(f);
+    const last = latestDay(f, e.todayIndex);
     out += text(x, y + 26, last < 0 ? "No readings yet"
-      : `${dayLabel(last, e.dayNames)} ${kwh(last).toFixed(1)} kWh ${cost(last)}`,
+      : `${dayLabel(last, e)} ${kwh(last).toFixed(1)} kWh ${cost(last)}`,
       { size: 18, bold: true, max: colW });
-    out += text(x, y + 46, kwh(6) ? `Today so far ${kwh(6).toFixed(1)} kWh` : "Today: no data yet",
-      { size: 15, fill: GREY, max: colW });
+    const week = weekTotal(f, e);
+    out += text(x, y + 46, week.pence !== null ? `This week ${pounds(week.pence)} · ${week.kwh.toFixed(0)} kWh`
+      : `This week ${week.kwh.toFixed(0)} kWh`, { size: 15, fill: GREY, max: colW });
 
-    // Last 7 days as bars, today on the right.
-    const chartTop = y + 56, chartH = 40, max = Math.max(...f.kwh.map(v => v || 0), 0.1);
+    // This week, Monday to Sunday, as bars.
+    const week7 = weekDays(e);
+    const chartTop = y + 56, chartH = 40, max = Math.max(...week7.map(i => f.kwh[i] || 0), 0.1);
     const barW = colW / 7;
-    f.kwh.forEach((v, i) => {
-      const bx = x + i * barW + 4;
+    week7.forEach((i, slot) => {
+      const v = f.kwh[i];
+      const bx = x + slot * barW + 4;
       const h = v ? Math.max(2, (v / max) * chartH) : 0;
       if (h) out += `<rect x="${bx}" y="${chartTop + chartH - h}" width="${barW - 8}" height="${h}" fill="${i === last ? "#000" : "#888"}"/>`;
       out += text(bx + (barW - 8) / 2, chartTop + chartH + 16, e.days[i], { size: 13, fill: GREY, anchor: "middle" });
@@ -316,48 +319,60 @@ function energy(result, top) {
 
 // Gas and electric for page 2: a big block each with a 7-day chart.
 // Bright usually runs a day behind and sends 0 for days it hasn't got yet, so
-// use the most recent full day (not today) that actually has readings.
-function latestDay(f) {
-  for (let i = 5; i >= 0; i--) if (f.kwh[i] > 0) return i;
+// use the most recent full day (before today) that actually has readings.
+function latestDay(f, todayIndex) {
+  for (let i = todayIndex - 1; i >= 0; i--) if (f.kwh[i] > 0) return i;
   return -1;
 }
-const dayLabel = (i, names) => (i === 5 ? "Yesterday" : names ? names[i] : "");
-const pounds = p => `£${(p / 100).toFixed(2)}`;
-// Totals over the 7 days in the chart; pence is null if Bright has no costs.
-function weekTotal(f) {
-  const kwh = f.kwh.reduce((t, v) => t + (v || 0), 0);
-  const costs = (f.pence || []).filter(v => v != null);
-  return { kwh, pence: costs.length ? costs.reduce((t, v) => t + v, 0) : null };
+// "Yesterday", a day this week by name, or "Last Wednesday" for last week.
+function dayLabel(i, e) {
+  if (i === e.todayIndex - 1) return "Yesterday";
+  return i < e.weekStart ? `Last ${e.dayNames[i]}` : e.dayNames[i];
 }
+const pounds = p => `£${(p / 100).toFixed(2)}`;
+// Totals for this calendar week (Monday to today); pence is null if Bright has no costs.
+function weekTotal(f, e) {
+  let kwh = 0, pence = null;
+  for (let i = e.weekStart; i <= e.todayIndex; i++) {
+    kwh += f.kwh[i] || 0;
+    if (f.pence && f.pence[i] != null) pence = (pence || 0) + f.pence[i];
+  }
+  return { kwh, pence };
+}
+// This week's seven days, Monday to Sunday, as indices into the data.
+const weekDays = e => [0, 1, 2, 3, 4, 5, 6].map(d => e.weekStart + d);
 
-function energyBlock(name, f, days, top, names) {
+function energyBlock(name, f, e, top) {
   let y = top + 24;
   let out = heading(y, name);
   if (!f) return out + text(M, y + 32, "No meter found", { size: 18, fill: GREY });
-  const cost = i => (f.pence && f.pence[i] != null ? ` · £${(f.pence[i] / 100).toFixed(2)}` : "");
-  const last = latestDay(f), today = f.kwh[6];
+  const cost = i => (f.pence && f.pence[i] != null ? ` · ${pounds(f.pence[i])}` : "");
+  const last = latestDay(f, e.todayIndex), today = f.kwh[e.todayIndex];
   out += text(M, y + 36, last < 0 ? "No readings yet"
-    : `${dayLabel(last, names)} ${f.kwh[last].toFixed(1)} kWh${cost(last)}`,
+    : `${dayLabel(last, e)} ${f.kwh[last].toFixed(1)} kWh${cost(last)}`,
     { size: 26, bold: true, max: WIDTH - 2 * M });
-  // The last 7 days' spend (including standing charges) and use, as in the chart.
-  const week = weekTotal(f);
+  // This calendar week's spend (including standing charges) and use, as in the Bright app.
+  const week = weekTotal(f, e);
   const parts = [];
-  if (week.pence !== null) parts.push(`Last 7 days: ${pounds(week.pence)}`);
+  if (week.pence !== null) parts.push(`This week: ${pounds(week.pence)}`);
   parts.push(`${week.kwh.toFixed(0)} kWh`);
   if (today > 0) parts.push(`today so far ${today.toFixed(1)} kWh`);
   out += text(M, y + 60, parts.join(" · "), { size: 17, fill: GREY, max: WIDTH - 2 * M });
 
-  // Last 7 days as bars with their values, the latest full day in black.
-  const chartTop = y + 92, chartH = 76, max = Math.max(...f.kwh.map(v => v || 0), 0.1);
+  // This week, Monday to Sunday, as bars with their values, the latest full day in black.
+  const week7 = weekDays(e);
+  const chartTop = y + 92, chartH = 76, max = Math.max(...week7.map(i => f.kwh[i] || 0), 0.1);
   const barW = (WIDTH - 2 * M) / 7;
-  f.kwh.forEach((v, i) => {
-    const bx = M + i * barW + 8, w = barW - 16, cx = bx + w / 2;
+  week7.forEach((i, slot) => {
+    const v = f.kwh[i];
+    const bx = M + slot * barW + 8, w = barW - 16, cx = bx + w / 2;
     const h = v ? Math.max(2, (v / max) * chartH) : 0;
     if (h) {
       out += `<rect x="${bx}" y="${chartTop + chartH - h}" width="${w}" height="${h}" fill="${i === last ? "#000" : "#999"}"/>`;
       out += text(cx, chartTop + chartH - h - 5, v.toFixed(v < 10 ? 1 : 0), { size: 13, fill: GREY, anchor: "middle" });
     }
-    out += text(cx, chartTop + chartH + 18, days[i], { size: 14, fill: GREY, anchor: "middle", bold: i === last });
+    const label = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][slot];
+    out += text(cx, chartTop + chartH + 18, label, { size: 14, fill: i === e.todayIndex ? "#000" : GREY, anchor: "middle", bold: i === last || i === e.todayIndex });
   });
   return out;
 }
@@ -431,12 +446,12 @@ function energyPage(power, top, buttonY) {
   if (!power.ok) return heading(top + 22, "Energy") + unavailable(top + 52, "Smart meter", power.error);
   const e = power.value;
   // Both fuels together, top right.
-  const totals = [e.electric, e.gas].filter(Boolean).map(weekTotal).map(t => t.pence).filter(p => p !== null);
+  const totals = [e.electric, e.gas].filter(Boolean).map(f => weekTotal(f, e).pence).filter(p => p !== null);
   const both = totals.length === 2
-    ? text(RIGHT, top + 24, `Gas + electric, last 7 days: ${pounds(totals[0] + totals[1])}`, { size: 16, bold: true, anchor: "end" })
+    ? text(RIGHT, top + 24, `Gas + electric, this week: ${pounds(totals[0] + totals[1])}`, { size: 16, bold: true, anchor: "end" })
     : "";
-  return both + energyBlock("Electric", e.electric, e.days, top, e.dayNames) + line(top + 222) +
-    energyBlock("Gas", e.gas, e.days, top + 222, e.dayNames) + backButton(buttonY);
+  return both + energyBlock("Electric", e.electric, e, top) + line(top + 222) +
+    energyBlock("Gas", e.gas, e, top + 222) + backButton(buttonY);
 }
 
 // ---------- landscape (800 x 600) ----------
