@@ -344,7 +344,7 @@ function weekTotal(f, e) {
 // This week's seven days, Monday to Sunday, as indices into the data.
 const weekDays = e => [0, 1, 2, 3, 4, 5, 6].map(d => e.weekStart + d);
 
-function energyBlock(name, f, e, top) {
+function energyBlock(name, f, e, top, chart = true) {
   let y = top + 24;
   let out = heading(y, name);
   if (!f) return out + text(M, y + 32, "No meter found", { size: 18, fill: GREY });
@@ -364,6 +364,7 @@ function energyBlock(name, f, e, top) {
   out += `<text x="${M}" y="${y + 63}" font-size="21" font-weight="700" fill="#000">${esc(lead)}` +
     (restText ? `<tspan font-size="19" font-weight="400" fill="#333">${esc(restText)}</tspan>` : "") + `</text>`;
 
+  if (!chart) return out;
   // This week, Monday to Sunday, as bars with their values, the latest full day in black.
   const week7 = weekDays(e);
   const chartTop = y + 92, chartH = 76, max = Math.max(...week7.map(i => f.kwh[i] || 0), 0.1);
@@ -421,6 +422,7 @@ function rainBox(r, x, top, right) {
 
 // The night screensaver: a big clock, the date and a little weather.
 function screensaver(now, zone, weather, notes = []) {
+  if (notes.length) return notesScreensaver(now, zone, weather, notes, WIDTH, HEIGHT);
   const cx = WIDTH / 2;
   let out = text(cx, 250, clock(now, zone), { size: 176, bold: true, anchor: "middle" });
   out += text(cx, 312, dateText(now, zone), { size: 30, anchor: "middle" });
@@ -441,10 +443,42 @@ function screensaver(now, zone, weather, notes = []) {
   } else {
     out += text(cx, 470, "Weather unavailable", { size: 22, fill: GREY, anchor: "middle" });
   }
-  // With notes, they take the place of "Tap to wake" at the bottom.
-  if (notes.length) out += line(690, 60, WIDTH - 60) + notesBox(notes, 60, 692, HEIGHT - 10, WIDTH - 120, { heading: false, size: 21, maxLines: 1 });
-  else out += text(cx, HEIGHT - 30, "Tap to wake", { size: 18, fill: GREY, anchor: "middle" });
+  out += text(cx, HEIGHT - 30, "Tap to wake", { size: 18, fill: GREY, anchor: "middle" });
   return out;
+}
+
+// The screensaver when there are notes: a smaller clock and the weather in
+// brief at the top, and the notes as big as they'll fit below.
+function notesScreensaver(now, zone, weather, notes, W, H) {
+  const wide = W > H;
+  let out, top;
+  const w = weather.ok ? weather.value : null;
+  const [desc, kind] = w ? describe(w.now.code) : ["", ""];
+  const rainHead = w ? rainText(w.rain)[0] : "";
+  if (wide) {
+    // Clock on the left, date and weather on the right.
+    out = text(M, 150, clock(now, zone), { size: 150, bold: true });
+    const rx = 500, rw = W - M - rx;
+    out += text(rx, 46, dateText(now, zone), { size: 22, max: rw });
+    if (w) {
+      out += icon(kind, rx - 4, 58, 62, w.now.day);
+      out += text(rx + 70, 108, temp(w.now.temp), { size: 50, bold: true });
+      out += text(rx, 140, `${desc}, feels ${temp(w.now.feels)}`, { size: 17, max: rw });
+      out += text(rx, 166, rainHead.replace("No rain expected", "No rain"), { size: 17, bold: true, max: rw * 1.15 });
+    }
+    top = 182;
+  } else {
+    const cx = W / 2;
+    out = text(cx, 170, clock(now, zone), { size: 150, bold: true, anchor: "middle" });
+    out += text(cx, 214, dateText(now, zone), { size: 26, anchor: "middle" });
+    if (w) {
+      out += text(cx, 262, `${temp(w.now.temp)} · ${desc}, feels ${temp(w.now.feels)}`, { size: 24, anchor: "middle", max: W - 2 * M });
+      out += text(cx, 294, rainHead, { size: 20, bold: true, anchor: "middle", max: W - 2 * M });
+    }
+    top = 316;
+  }
+  out += line(top, M, W - M);
+  return out + notesBox(notes, M + 6, top + 8, H - 8, W - 2 * M - 12, { heading: false, size: 19, maxLines: 1, maxSize: 96 });
 }
 
 function svgDoc(body, w = WIDTH, h = HEIGHT) {
@@ -477,7 +511,8 @@ function travel(bus, car, power, zone, top, bottom) {
 }
 
 // Gas and electric stacked, with the back button, from top (portrait coordinates).
-function energyPage(power, top, buttonY) {
+// compact: without the bar charts, to leave room for notes.
+function energyPage(power, top, buttonY, compact = false) {
   if (!power.ok) return heading(top + 22, "Energy") + unavailable(top + 52, "Smart meter", power.error);
   const e = power.value;
   // Both fuels together, top right.
@@ -485,8 +520,9 @@ function energyPage(power, top, buttonY) {
   const both = totals.length === 2
     ? text(RIGHT, top + 24, `Gas + electric, this week: ${pounds(totals[0] + totals[1])}`, { size: 16, bold: true, anchor: "end" })
     : "";
-  return both + energyBlock("Electric", e.electric, e, top) + line(top + 222) +
-    energyBlock("Gas", e.gas, e, top + 222) + (buttonY === null ? "" : backButton(buttonY));
+  const gap = compact ? 104 : 222;
+  return both + energyBlock("Electric", e.electric, e, top, !compact) + line(top + gap) +
+    energyBlock("Gas", e.gas, e, top + gap, !compact) + (buttonY === null ? "" : backButton(buttonY));
 }
 
 // ---------- notice board ----------
@@ -503,11 +539,24 @@ function wrap(s, size, maxWidth, bold = false) {
 
 // The newest notes that fit between top and bottom, each with a bullet and
 // up to two lines; "+ N more" if some don't fit. Returns "" with no notes.
-function notesBox(notes, x, top, bottom, width, { size = 20, heading: withHeading = true, maxLines = 2 } = {}) {
+// With maxSize, the notes are drawn as big as will fit (up to maxSize), each
+// in full on up to three lines; if they don't fit even at `size`, as above.
+function notesBox(notes, x, top, bottom, width, { size = 20, heading: withHeading = true, maxLines = 2, maxSize = size } = {}) {
   if (!notes || !notes.length) return "";
-  const rowH = Math.round(size * 1.35);
   let y = top, out = "";
   if (withHeading) { y += 22; out += heading(y, "Notes").replace(`x="${M}"`, `x="${x}"`); y += 8; }
+  for (let big = maxSize; big > size; big -= 2) {
+    const h = Math.round(big * 1.25), indent = Math.round(big * 0.75);
+    const rows = notes.map(n => wrap(n.text, big, width - indent, true));
+    if (rows.some(l => l.length > 3) || y + rows.flat().length * h + (rows.length - 1) * big * 0.3 > bottom) continue;
+    for (const lines of rows) {
+      out += `<circle cx="${x + big * 0.22}" cy="${y + h - big * 0.2 - big * 0.36}" r="${Math.max(4, big * 0.14)}" fill="#000"/>`;
+      lines.forEach((l, i) => { out += text(x + indent, y + h - big * 0.2 + i * h, l, { size: big, bold: true }); });
+      y += lines.length * h + big * 0.3;
+    }
+    return out;
+  }
+  const rowH = Math.round(size * 1.35);
   const room = (width - 20) * 1.1;
   const rows = notes.map(n => {
     let lines = wrap(n.text, size, width - 20, true);
@@ -595,10 +644,9 @@ function travelLandscape(bus, car, power, zone) {
 }
 
 function landscapeScreensaver(now, zone, weather, notes = []) {
+  if (notes.length) return notesScreensaver(now, zone, weather, notes, L_WIDTH, L_HEIGHT);
   const cx = L_WIDTH / 2;
-  const up = notes.length ? 70 : 0; // room for the notes at the bottom
-  let out = text(cx, notes.length ? 186 : 230, clock(now, zone), { size: notes.length ? 172 : 210, bold: true, anchor: "middle" });
-  out += `<g transform="translate(0 ${-up})">`;
+  let out = text(cx, 230, clock(now, zone), { size: 210, bold: true, anchor: "middle" });
   out += text(cx, 290, dateText(now, zone), { size: 30, anchor: "middle" });
   out += line(326, 100, L_WIDTH - 100);
   if (weather.ok) {
@@ -616,10 +664,7 @@ function landscapeScreensaver(now, zone, weather, notes = []) {
   } else {
     out += text(cx, 440, "Weather unavailable", { size: 22, fill: GREY, anchor: "middle" });
   }
-  out += "</g>";
-  // With notes, they take the place of "Tap to wake" at the bottom.
-  if (notes.length) out += line(512, 100, L_WIDTH - 100) + notesBox(notes, 100, 512, 594, L_WIDTH - 200, { heading: false, size: 19, maxLines: 1 });
-  else out += text(cx, L_HEIGHT - 8, "Tap to wake", { size: 13, fill: GREY, anchor: "middle" });
+  out += text(cx, L_HEIGHT - 8, "Tap to wake", { size: 13, fill: GREY, anchor: "middle" });
   return out;
 }
 
@@ -627,9 +672,9 @@ function renderLandscape({ now, zone, weather, bus, car, power, notes = [], page
   if (page === 0) return svgDoc(landscapeScreensaver(now, zone, weather, notes), L_WIDTH, L_HEIGHT);
   // Notes go under the energy figures, above the button.
   const notesSvg = notes.length
-    ? line(462) + notesBox(notes, M, 462, back ? INNER_H - 66 : INNER_H - 14, WIDTH - 2 * M, { size: 22 }) : "";
+    ? line(222) + notesBox(notes, M, 226, back ? INNER_H - 66 : INNER_H - 14, WIDTH - 2 * M, { size: 22, maxSize: 90 }) : "";
   const right = page === 2
-    ? `<g transform="translate(${COL} 0) scale(${SCALE.toFixed(4)})">${energyPage(power, 12, back ? INNER_H - 56 : null)}${notesSvg}</g>`
+    ? `<g transform="translate(${COL} 0) scale(${SCALE.toFixed(4)})">${energyPage(power, 12, back ? INNER_H - 56 : null, notes.length > 0)}${notesSvg}</g>`
     : travelLandscape(bus, car, power, zone);
   const body = leftColumn(now, zone, weather) +
     `<line x1="${COL}" y1="${M}" x2="${COL}" y2="${L_HEIGHT - M}" stroke="#000" stroke-width="2"/>` + right;
@@ -645,8 +690,9 @@ export function renderSvg({ now, zone, weather, bus, car, power, notes = [], pag
   if (page === 0) return svgDoc(screensaver(now, zone, weather, notes));
   // Upright, the energy page has no spare room, so notes take the place of the hourly forecast.
   if (page === 2 && notes.length) {
-    return svgDoc(header(now, zone, weather) + notesBox(notes, M, 158, 292, WIDTH - 2 * M) + line(296) +
-      energyPage(power, 298, back ? HEIGHT - 52 : null));
+    return svgDoc(header(now, zone, weather) + forecast(weather) + energyPage(power, 298, null, true) + line(508) +
+      notesBox(notes, M, 510, back ? HEIGHT - 62 : HEIGHT - 12, WIDTH - 2 * M, { size: 22, maxSize: 80 }) +
+      (back ? backButton(HEIGHT - 52) : ""));
   }
   const top = header(now, zone, weather) + forecast(weather);
   if (page === 2) return svgDoc(top + energyPage(power, 298, back ? HEIGHT - 52 : null));

@@ -42,7 +42,7 @@ function demoSvg(page, single) {
   return renderSvg({
     now, zone: "Europe/London", page, landscape: orientation(env).landscape,
     // --notes shows some made-up notes on the notice board.
-    notes: process.argv.includes("--notes") ? [
+    notes: process.argv.includes("--note") ? [{ text: "Bins out tonight" }] : process.argv.includes("--notes") ? [
       { text: "Bins out tonight, recycling week" },
       { text: "Dentist Thursday 4:15pm, bring the forms from the drawer in the kitchen and the new insurance card" },
       { text: "Gas meter reading due" },
