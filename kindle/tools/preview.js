@@ -50,7 +50,8 @@ function demoSvg(page, single) {
     ] : [],
     weather: { ok: true, value: {
       now: { temp: 11.4, feels: 9.2, code: 2, wind: 9, day: true },
-      today: { max: 13, min: 6 }, tomorrow: { code: 61, max: 12, min: 7, rain: 70 },
+      today: { max: 13, min: 6 }, tomorrow: { code: 61, max: 12, min: 7, rain: 70 }, place: "Dagenham",
+      rain: { now: false, start: "21:15", startDay: "", end: "23:45", endsInWindow: true, minutes: 150, peak: 1.8, total: 2.6, intensity: "light", chance: 60 },
       hours: [[19, 3, 10, 0], [22, 61, 9, 45], [1, 63, 8, 80], [4, 3, 7, 20], [7, 1, 7, 5]]
         .map(([h, code, temp, rain]) => ({ time: `${String(h).padStart(2, "0")}:00`, code, temp, rain, day: h >= 7 && h < 17 })),
     } },
