@@ -39,12 +39,21 @@ find_touch() {
 }
 
 # Each touch event the screen sends updates the time of the last tap.
+# Taps are logged (at most once every 10 seconds) so the log shows whether
+# the screen only reports real taps or sends events all the time.
 watch_taps() {
+  logged=0
   while true; do
     if dd if="$1" of=/dev/null bs=16 count=1 2>/dev/null; then
-      date +%s >"$TAP_FILE"
+      t=$(date +%s)
+      echo "$t" >"$TAP_FILE"
+      if [ $((t - logged)) -ge 10 ]; then
+        log "tap"
+        logged=$t
+      fi
     else
-      sleep 5
+      log "can't read $1, so taps won't work"
+      sleep 60
     fi
   done
 }
@@ -90,7 +99,9 @@ reconnect_wifi() {
 lipc-set-prop com.lab126.powerd preventScreenSaver 1 >/dev/null 2>&1
 
 TOUCH="${TOUCH_DEVICE:-$(find_touch)}"
-if [ -n "$TOUCH" ] && [ -e "$TOUCH" ]; then
+if [ "$TOUCH" = off ]; then
+  log "tap detection is off (TOUCH_DEVICE=off)"
+elif [ -n "$TOUCH" ] && [ -e "$TOUCH" ]; then
   log "watching taps on $TOUCH"
   watch_taps "$TOUCH" &
 else
@@ -98,6 +109,8 @@ else
 fi
 
 echo 0 >"$TAP_FILE"
+started=$(date +%s)
+has2=""
 fails=0
 last_ok=$(date +%s)
 last_ok_hm=$(date +%H:%M)
@@ -129,8 +142,12 @@ while true; do
     fi
     if fetch_page 2; then
       fresh=1
-    elif [ -f "$TMP/page2.png" ]; then
+      [ "$has2" = 1 ] || log "page 2 (energy) downloaded: pages will rotate"
+      has2=1
+    else
       rm -f "$TMP/page2.png" # No page 2 (or no connection): stay on page 1.
+      [ "$has2" = 0 ] || log "page 2 (energy) not available: showing page 1 only"
+      has2=0
     fi
     # Page 0 (the screensaver) only exists during screensaver hours.
     if fetch_page 0; then
@@ -161,6 +178,10 @@ while true; do
     if [ "$count" -ge "$FULL_REFRESH_EVERY" ]; then
       mode=full
       count=0
+    fi
+    # Log page changes for the first 10 minutes, to check rotation is working.
+    if [ "$want" != "$shown" ] && [ $((now - started)) -lt 600 ]; then
+      log "showing page $want ($mode refresh)"
     fi
     show "$TMP/page$want.png" "$mode"
     shown=$want
