@@ -27,7 +27,7 @@ Any section you don't set up is left out, and the buses get the space.
 |---|---|---|
 | `DASH_TOKEN` | A password for your dashboard's address, so only your Kindle can see it. **Required.** | Make up a long random one, e.g. 20+ letters and numbers. |
 | `HOME_LATLON` | Where to get the weather for, as `latitude,longitude` | In Google Maps, press and hold on your home; the numbers at the top are it. E.g. `51.54,0.13` |
-| `BUS_STOPS` | Your stops, separated by `;`. Add `:` and routes to show only those routes, and `@` and your walk to the stop in minutes. | Find the stop on tfl.gov.uk; its ID is in the page address, e.g. `tfl.gov.uk/bus/stop/490000077E/...` (or send the 5-digit code on the stop sign). Example: `490008458N:62@7; 490008457N:368@10` |
+| `BUS_STOPS` | Your stops, separated by `;`. Add `:` and routes to show only those routes, and `@` and your walk to the stop in minutes. | Find the stop on tfl.gov.uk; its ID is in the page address, e.g. `tfl.gov.uk/bus/stop/490000077E/...` (or send the 5-digit code on the stop sign). Example: `490008458N:62@7; 490008457N:368@10`. To show a stop only at certain times, add days and hours after the walk time: `490008457S:368@12 Sat-Sun 08:00-10:00`. |
 | `BUS_HOURS` | Optional. When bus times are shown, as `days times`. Outside these hours the main page shows the smart meter instead (with the drive, if one is due). Not set: always. | e.g. `Mon-Fri 04:30-10:00` |
 | `BUS_WALK_MINUTES` | Optional. Walk time for stops without `@`. | e.g. `4` |
 | `TOMTOM_KEY` | Drive time and traffic. Free: 2,500 lookups a day. Each update in a journey's time window uses 2 (so a 90-minute window updated every minute uses about 180). | Sign up at developer.tomtom.com, then copy the key from your dashboard there. |
@@ -36,7 +36,7 @@ Any section you don't set up is left out, and the buses get the space.
 | `DRIVE_FROM_LABEL` | Optional. The name of where drives start, shown in the heading ("HOME → LANGDON ACADEMY"). Default `Home`. | e.g. `Home` |
 | `DRIVE_TO`, `DRIVE_LABEL` | Optional: one journey shown all day instead | Postcode or `latitude,longitude`, and a name |
 | `DRIVE_MAP` | Optional. A small map of the route is shown beside the drive time; set `off` to hide it and give the buses more room. | `off` |
-| `SCREENSAVER` | Optional. When the Kindle shows the big-clock screensaver; a tap wakes the dashboard for 5 minutes. Default `00:00-06:00`. `outside-drives` shows it at all times except during your `DRIVE_1`, `DRIVE_2`… windows. | e.g. `22:30-06:00`, `outside-drives`, or `off` |
+| `SCREENSAVER` | Optional. When the Kindle shows the big-clock screensaver; a tap wakes the dashboard for 5 minutes. Default `00:00-06:00`. `outside-drives` shows it at all times except during your `DRIVE_1`, `DRIVE_2`… windows and bus hours (`BUS_HOURS` and any stop's own hours). | e.g. `22:30-06:00`, `outside-drives`, or `off` |
 | `ORIENTATION` | Optional. `portrait` (the default), `landscape-right` (Kindle on its side, charging port on the right) or `landscape-left` (port on the left). Landscape puts the clock and weather in a column on the left. | e.g. `landscape-right` |
 | `GLOW_USERNAME`, `GLOW_PASSWORD` | Your smart meter, via the free **Bright** app (works with any UK supplier) | Install Bright (by Hildebrand), sign up and link your meter. Use that email and password. |
 | `TFL_APP_KEY` | Optional. Only needed if TfL starts refusing requests. | api-portal.tfl.gov.uk |
