@@ -24,5 +24,6 @@ export TAP_HOLD_SECONDS=${TAP_HOLD_SECONDS:-300}
 # Full (flashing) refresh every this many screen changes, to clear ghosting.
 export FULL_REFRESH_EVERY=${FULL_REFRESH_EVERY:-30}
 # The touchscreen is found automatically; set this only if taps don't work,
-# e.g. "/dev/input/event1" (the log lists the devices it saw).
+# e.g. "/dev/input/event1" (the log lists the devices it saw), or "off" to
+# turn tap detection off.
 export TOUCH_DEVICE=${TOUCH_DEVICE:-}
