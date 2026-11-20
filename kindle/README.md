@@ -27,6 +27,7 @@ Any section you don't set up is left out, and the buses get the space.
 |---|---|---|
 | `DASH_TOKEN` | A password for your dashboard's address, so only your Kindle can see it. **Required.** | Make up a long random one, e.g. 20+ letters and numbers. |
 | `HOME_LATLON` | Where to get the weather for, as `latitude,longitude` | In Google Maps, press and hold on your home; the numbers at the top are it. E.g. `51.54,0.13` |
+| `WEATHER_PLACE` | Optional. A name shown with the weather, so it's clear where it's for. | e.g. `Dagenham` |
 | `BUS_STOPS` | Your stops, separated by `;`. Add `:` and routes to show only those routes, and `@` and your walk to the stop in minutes. | Find the stop on tfl.gov.uk; its ID is in the page address, e.g. `tfl.gov.uk/bus/stop/490000077E/...` (or send the 5-digit code on the stop sign). Example: `490008458N:62@7; 490008457N:368@10`. To show a stop only at certain times, add days and hours after the walk time: `490008457S:368@12 Sat-Sun 08:00-10:00`. |
 | `BUS_HOURS` | Optional. When bus times are shown, as `days times`. Outside these hours the main page shows the smart meter instead (with the drive, if one is due). Not set: always. | e.g. `Mon-Fri 04:30-10:00` |
 | `BUS_WALK_MINUTES` | Optional. Walk time for stops without `@`. | e.g. `4` |
@@ -39,6 +40,7 @@ Any section you don't set up is left out, and the buses get the space.
 | `SCREENSAVER` | Optional. When the Kindle shows the big-clock screensaver; a tap wakes the dashboard for 5 minutes. Default `00:00-06:00`. `outside-drives` shows it at all times except during your `DRIVE_1`, `DRIVE_2`… windows and bus hours (`BUS_HOURS` and any stop's own hours). | e.g. `22:30-06:00`, `outside-drives`, or `off` |
 | `ORIENTATION` | Optional. `portrait` (the default), `landscape-right` (Kindle on its side, charging port on the right) or `landscape-left` (port on the left). Landscape puts the clock and weather in a column on the left. | e.g. `landscape-right` |
 | `GLOW_USERNAME`, `GLOW_PASSWORD` | Your smart meter, via the free **Bright** app (works with any UK supplier) | Install Bright (by Hildebrand), sign up and link your meter. Use that email and password. |
+| `METOFFICE_KEY` | Optional (Secret). Makes the Met Office the first weather source, with Open-Meteo and then yr.no as backups. Free: Weather DataHub, "Site-specific – Global Spot" plan (360 calls a day; this uses about 96). | datahub.metoffice.gov.uk → register → subscribe to Global Spot → copy the API key |
 | `TFL_APP_KEY` | Optional. Only needed if TfL starts refusing requests. | api-portal.tfl.gov.uk |
 | `TIMEZONE` | Optional. Defaults to `Europe/London`. | |
 
@@ -124,4 +126,4 @@ for taps. If it picked the wrong one, set `TOUCH_DEVICE` in `local/env.sh`.
   Without `&page`, energy goes at the bottom of a single page, as before.
 - The layout is in `src/render.js`; each data source has its own file in `src/`.
 
-Data: TfL Open Data, Open-Meteo (with yr.no / MET Norway, CC BY 4.0, as an automatic backup), TomTom and Bright (Glowmarkt). Font: Inter (SIL Open Font Licence, `fonts/OFL.txt`).
+Data: TfL Open Data, the Met Office (if `METOFFICE_KEY` is set), Open-Meteo and yr.no / MET Norway (CC BY 4.0) as backups, TomTom and Bright (Glowmarkt). Font: Inter (SIL Open Font Licence, `fonts/OFL.txt`).

@@ -69,6 +69,8 @@ export async function buildSvg(env, now = new Date(), page = 1, { single = true 
     wantDrive ? settle(hasDrives(env), () => getDrive(env, now)) : skip,
     wantEnergy ? settle(hasEnergy(env), () => getEnergy(env, now)) : skip,
   ]);
+  // WEATHER_PLACE (e.g. "Dagenham") is shown with the weather.
+  if (weather.ok && env.WEATHER_PLACE) weather.value = { ...weather.value, place: String(env.WEATHER_PLACE).trim() };
   // A drive outside its days and hours is left out, like one that isn't set up.
   const drive = car.ok && car.value === null ? { ok: false, missing: true } : car;
   return renderSvg({ now, zone: tz(env), weather, bus, car: drive, power, page, back, landscape: orientation(env).landscape });

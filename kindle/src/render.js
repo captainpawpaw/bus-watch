@@ -90,6 +90,7 @@ function header(now, zone, weather) {
     const w = weather.value;
     const [desc, kind] = describe(w.now.code);
     out += icon(kind, 330, 22, 86, w.now.day);
+    if (w.place) out += text(RIGHT, 18, w.place.toUpperCase(), { size: 13, bold: true, fill: GREY, anchor: "end" });
     out += text(RIGHT, 80, temp(w.now.temp), { size: 60, bold: true, anchor: "end" });
     out += text(RIGHT, 110, `${desc}, feels ${temp(w.now.feels)}`, { size: 18, anchor: "end", max: 230 });
     out += text(RIGHT, 136, w.rain ? rainText(w.rain)[0]
@@ -427,7 +428,7 @@ function screensaver(now, zone, weather) {
     const [desc, kind] = describe(w.now.code);
     out += icon(kind, 92, 392, 120, w.now.day);
     out += text(236, 476, temp(w.now.temp), { size: 96, bold: true });
-    out += text(236, 512, `${desc}, feels ${temp(w.now.feels)}`, { size: 22, max: WIDTH - 236 - M });
+    out += text(236, 512, `${desc}, feels ${temp(w.now.feels)}${w.place ? ` · ${w.place}` : ""}`, { size: 22, max: WIDTH - 236 - M });
     const [rainHead, rainMore] = rainText(w.rain);
     out += text(cx, 566, rainHead, { size: 22, bold: true, anchor: "middle", max: WIDTH - 2 * M });
     if (rainMore) out += text(cx, 594, rainMore, { size: 18, anchor: "middle", max: WIDTH - 2 * M });
@@ -501,6 +502,7 @@ function leftColumn(now, zone, weather) {
   const wv = weather.value;
   const [desc, kind] = describe(wv.now.code);
   out += icon(kind, x - 4, 166, 76, wv.now.day);
+  if (wv.place) out += text(COL - M, 178, wv.place.toUpperCase(), { size: 12, bold: true, fill: GREY, anchor: "end" });
   out += text(x + 92, 226, temp(wv.now.temp), { size: 58, bold: true });
   out += text(x, 268, `${desc}, feels ${temp(wv.now.feels)}`, { size: 17, max: w });
   out += text(x, 292, `High ${temp(wv.today.max)} · Low ${temp(wv.today.min)} · ` +
@@ -555,7 +557,7 @@ function landscapeScreensaver(now, zone, weather) {
     const [desc, kind] = describe(w.now.code);
     out += icon(kind, 170, 344, 104, w.now.day);
     out += text(300, 424, temp(w.now.temp), { size: 84, bold: true });
-    out += text(300, 458, `${desc}, feels ${temp(w.now.feels)}`, { size: 22, max: L_WIDTH - 300 - M });
+    out += text(300, 458, `${desc}, feels ${temp(w.now.feels)}${w.place ? ` · ${w.place}` : ""}`, { size: 22, max: L_WIDTH - 300 - M });
     const [rainHead, rainMore] = rainText(w.rain);
     out += text(cx, 492, rainHead, { size: 22, bold: true, anchor: "middle", max: L_WIDTH - 2 * M });
     if (rainMore) out += text(cx, 516, rainMore, { size: 17, anchor: "middle", max: L_WIDTH - 2 * M });

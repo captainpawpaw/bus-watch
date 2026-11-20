@@ -13,20 +13,25 @@ export async function getWeather(env) {
   const { lat, lon } = parseLatLon(env.HOME_LATLON, "HOME_LATLON");
   const key = `${lat},${lon}`;
   if (cached && cachedFor === key && Date.now() - cachedAt < CACHE_MS) return cached;
-  let fresh;
-  try {
-    fresh = await fetchWeather(env, lat, lon);
-  } catch (e) {
-    // Open-Meteo refused or failed: try yr.no (MET Norway) instead.
+  // The Met Office first (if METOFFICE_KEY is set), then Open-Meteo, then yr.no.
+  const sources = [
+    ...(env.METOFFICE_KEY ? [() => fetchMetOffice(env, lat, lon)] : []),
+    () => fetchWeather(env, lat, lon),
+    () => fetchYr(env, lat, lon),
+  ];
+  let firstError;
+  for (const source of sources) {
     try {
-      fresh = await fetchYr(env, lat, lon);
-    } catch {
-      if (cached && cachedFor === key && Date.now() - cachedAt < KEEP_MS) return cached;
-      throw e;
+      const fresh = await source();
+      cached = fresh; cachedAt = Date.now(); cachedFor = key;
+      return fresh;
+    } catch (e) {
+      firstError ??= e;
     }
   }
-  cached = fresh; cachedAt = Date.now(); cachedFor = key;
-  return fresh;
+  // All failed: keep showing the last forecast for a while.
+  if (cached && cachedFor === key && Date.now() - cachedAt < KEEP_MS) return cached;
+  throw firstError;
 }
 
 async function fetchWeather(env, lat, lon) {
@@ -86,6 +91,98 @@ function summarise(w, source) {
   };
 }
 
+// ---------- helpers for reshaping other forecasts like Open-Meteo's ----------
+function localTime(zone) {
+  return ms => {
+    const p = new Intl.DateTimeFormat("en-GB", { timeZone: zone, year: "numeric", month: "2-digit", day: "2-digit",
+      hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(new Date(ms));
+    const g = t => p.find(x => x.type === t).value;
+    return `${g("year")}-${g("month")}-${g("day")}T${g("hour")}:${g("minute")}`;
+  };
+}
+
+// Today and tomorrow (local dates) from an hourly series: high, low, the
+// midday weather and the highest chance of rain.
+function dailyFrom(hourly) {
+  const dates = [...new Set(hourly.time.map(t => t.slice(0, 10)))].slice(0, 2);
+  const daily = { weather_code: [], temperature_2m_max: [], temperature_2m_min: [], precipitation_probability_max: [], sunrise: [], sunset: [] };
+  for (const date of dates) {
+    const idx = hourly.time.map((t, i) => (t.startsWith(date) ? i : -1)).filter(i => i >= 0);
+    const temps = idx.map(i => hourly.temperature_2m[i]).filter(v => v != null);
+    const noon = idx.find(i => hourly.time[i].slice(11, 13) === "12") ?? idx[Math.floor(idx.length / 2)];
+    const probs = idx.map(i => hourly.precipitation_probability[i]).filter(v => v != null);
+    daily.weather_code.push(hourly.weather_code[noon]);
+    daily.temperature_2m_max.push(Math.max(...temps));
+    daily.temperature_2m_min.push(Math.min(...temps));
+    daily.precipitation_probability_max.push(probs.length ? Math.max(...probs) : null);
+    daily.sunrise.push("");
+    daily.sunset.push("");
+  }
+  return daily;
+}
+
+// ---------- Met Office (first choice when METOFFICE_KEY is set) ----------
+// Weather DataHub, Site-specific "Global Spot" (free plan: 360 calls a day; at
+// one call per 15 minutes this uses about 96). Hourly, so the rain alert has
+// hourly timing.
+
+// Met Office significant weather codes -> the WMO codes describe() understands,
+// and whether the code is a night one.
+const MO_CODES = {
+  "-1": 51, 0: 0, 1: 0, 2: 2, 3: 2, 5: 45, 6: 45, 7: 3, 8: 3, 9: 80, 10: 80, 11: 51, 12: 61,
+  13: 81, 14: 81, 15: 65, 16: 66, 17: 66, 18: 66, 19: 80, 20: 80, 21: 80, 22: 85, 23: 85, 24: 71,
+  25: 86, 26: 86, 27: 75, 28: 95, 29: 95, 30: 95,
+};
+const MO_NIGHT = new Set([0, 2, 9, 13, 16, 19, 22, 25, 28]);
+
+async function fetchMetOffice(env, lat, lon) {
+  const q = new URLSearchParams({
+    latitude: (+lat).toFixed(4), longitude: (+lon).toFixed(4),
+    excludeParameterMetadata: "true", includeLocationName: "false",
+  });
+  const d = await getJson(`https://data.hub.api.metoffice.gov.uk/sitespecific/v0/point/hourly?${q}`,
+    { headers: { apikey: String(env.METOFFICE_KEY).trim(), accept: "application/json" } });
+  return summarise(fromMetOffice(d, tz(env)), "Met Office");
+}
+
+export function fromMetOffice(d, zone, now = new Date()) {
+  const local = localTime(zone);
+  const ts = d.features[0].properties.timeSeries;
+  const at = ts.map(t => Date.parse(t.time));
+  const code = t => MO_CODES[t.significantWeatherCode] ?? 3;
+  const isDay = t => (MO_NIGHT.has(t.significantWeatherCode) ? 0 : 1);
+
+  // Values already describe the hour ending at their time, like Open-Meteo's.
+  const hourly = { time: [], temperature_2m: [], precipitation: [], precipitation_rate: [], precipitation_probability: [], weather_code: [], is_day: [] };
+  ts.forEach((t, i) => {
+    hourly.time.push(local(at[i]));
+    hourly.temperature_2m.push(t.screenTemperature);
+    hourly.precipitation.push(t.totalPrecipAmount ?? 0);
+    hourly.precipitation_rate.push(t.precipitationRate ?? 0);
+    hourly.precipitation_probability.push(t.probOfPrecipitation ?? null);
+    hourly.weather_code.push(code(t));
+    hourly.is_day.push(isDay(t));
+  });
+
+  // "Now" is the latest hour that has started.
+  let c = 0;
+  while (c + 1 < ts.length && at[c + 1] <= now.getTime()) c++;
+  const nowQuarter = Math.floor(now.getTime() / 900e3) * 900e3;
+  return {
+    current: {
+      time: local(Math.max(nowQuarter, at[0])),
+      temperature_2m: ts[c].screenTemperature,
+      apparent_temperature: ts[c].feelsLikeTemperature ?? ts[c].screenTemperature,
+      weather_code: code(ts[c]),
+      wind_speed_10m: (ts[c].windSpeed10m ?? 0) * 2.23694,
+      is_day: isDay(ts[c]),
+      precipitation: ts[c].precipitationRate > 0 ? ts[c].precipitationRate : 0,
+    },
+    hourly,
+    daily: dailyFrom(hourly),
+  };
+}
+
 // ---------- yr.no (MET Norway) backup ----------
 // Free, no key; MET Norway asks apps to identify themselves. Data from MET
 // Norway, CC BY 4.0. Its hourly forecast is reshaped to look like Open-Meteo's
@@ -118,12 +215,7 @@ async function fetchYr(env, lat, lon) {
 }
 
 export function fromYr(d, zone, now = new Date()) {
-  const local = ms => {
-    const p = new Intl.DateTimeFormat("en-GB", { timeZone: zone, year: "numeric", month: "2-digit", day: "2-digit",
-      hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(new Date(ms));
-    const g = t => p.find(x => x.type === t).value;
-    return `${g("year")}-${g("month")}-${g("day")}T${g("hour")}:${g("minute")}`;
-  };
+  const local = localTime(zone);
   // Hourly entries only (later ones are 6-hourly).
   const ts = d.properties.timeseries.filter(t => t.data.next_1_hours);
   const at = ts.map(t => Date.parse(t.time));
@@ -144,22 +236,6 @@ export function fromYr(d, zone, now = new Date()) {
     hourly.is_day.push(yrDay(one(i).summary.symbol_code) ? 1 : 0);
   }
 
-  // Today and tomorrow (local dates): high, low, the midday symbol.
-  const dates = [...new Set(hourly.time.map(t => t.slice(0, 10)))].slice(0, 2);
-  const daily = { weather_code: [], temperature_2m_max: [], temperature_2m_min: [], precipitation_probability_max: [], sunrise: [], sunset: [] };
-  for (const date of dates) {
-    const idx = hourly.time.map((t, i) => (t.startsWith(date) ? i : -1)).filter(i => i >= 0);
-    const temps = idx.map(i => hourly.temperature_2m[i]);
-    const noon = idx.find(i => hourly.time[i].slice(11, 13) === "12") ?? idx[Math.floor(idx.length / 2)];
-    const probs = idx.map(i => hourly.precipitation_probability[i]).filter(v => v != null);
-    daily.weather_code.push(hourly.weather_code[noon]);
-    daily.temperature_2m_max.push(Math.max(...temps));
-    daily.temperature_2m_min.push(Math.min(...temps));
-    daily.precipitation_probability_max.push(probs.length ? Math.max(...probs) : null);
-    daily.sunrise.push("");
-    daily.sunset.push("");
-  }
-
   const c = inst(0);
   const nowQuarter = Math.floor(now.getTime() / 900e3) * 900e3;
   return {
@@ -173,7 +249,7 @@ export function fromYr(d, zone, now = new Date()) {
       precipitation: 0,
     },
     hourly,
-    daily,
+    daily: dailyFrom(hourly),
   };
 }
 
@@ -213,19 +289,25 @@ export function rainAlert(w) {
     step = 15 * 60e3;
     slots = m.time.map((t, i) => ({ end: asMs(t), mm: m.precipitation[i] || 0 }));
   } else {
+    // Hourly. Where the forecast also gives the rain rate at each hour (the Met
+    // Office does), use it too: a short heavy shower can be a small hourly total.
     step = 3600e3;
-    slots = (w.hourly?.time || []).map((t, i) => ({ end: asMs(t), mm: w.hourly.precipitation?.[i] || 0 }));
+    const rate = w.hourly?.precipitation_rate;
+    slots = (w.hourly?.time || []).map((t, i) => ({
+      end: asMs(t), mm: w.hourly.precipitation?.[i] || 0, rate: rate?.[i] || 0,
+    }));
   }
   slots = slots.filter(s => s.end > nowMs && s.end <= nowMs + 12 * 3600e3);
-  const first = slots.findIndex(s => s.mm > 0);
+  const wet = s => s.mm > 0 || s.rate > 0;
+  const first = slots.findIndex(wet);
   if (first < 0) return null;
 
   let last = first;
-  while (last + 1 < slots.length && slots[last + 1].mm > 0) last++;
+  while (last + 1 < slots.length && wet(slots[last + 1])) last++;
   const run = slots.slice(first, last + 1);
   const start = run[0].end - step;
   const end = run[run.length - 1].end;
-  const peak = Math.max(...run.map(s => s.mm)) * (3600e3 / step);
+  const peak = Math.max(...run.map(s => Math.max(s.mm * (3600e3 / step), s.rate || 0)));
   const total = run.reduce((t, s) => t + s.mm, 0);
   const now = start <= nowMs || (w.current.precipitation || 0) > 0;
   return {
