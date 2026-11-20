@@ -58,9 +58,15 @@ function demoSvg(page, single) {
         { kind: "Queue", road: "A3", where: "Wandsworth Bridge Roundabout", severity: 3 },
       ] } },
     power: page === 1 && !single ? { ok: false, missing: true } : { ok: true, value: {
-      days: ["W", "T", "F", "S", "S", "M", "T"],
-      electric: { kwh: [8.1, 7.4, 9.0, 11.2, 10.6, 8.4, 3.1], pence: [204, 186, 226, 281, 266, 210, 78] },
-      gas: { kwh: [32.5, 28.1, 30.4, 41.0, 38.2, 30.9, 12.4], pence: [221, 191, 207, 279, 260, 210, 84] },
+      // Monday last week to Sunday this week; today is Tuesday (index 8).
+      days: ["M", "T", "W", "T", "F", "S", "S", "M", "T", "W", "T", "F", "S", "S"],
+      dayNames: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday",
+        "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"],
+      weekStart: 7, todayIndex: 8,
+      electric: { kwh: [8.1, 7.4, 9.0, 11.2, 10.6, 8.4, 9.3, 8.8, 3.1, null, null, null, null, null],
+        pence: [204, 186, 226, 281, 266, 210, 233, 221, 78, null, null, null, null, null] },
+      gas: { kwh: [32.5, 28.1, 30.4, 41.0, 38.2, 30.9, 35.0, 33.1, 12.4, null, null, null, null, null],
+        pence: [221, 191, 207, 279, 260, 210, 238, 225, 84, null, null, null, null, null] },
     } },
   });
 }

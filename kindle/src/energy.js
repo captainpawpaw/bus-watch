@@ -50,12 +50,17 @@ async function fetchEnergy(env, now) {
   if (!resources) resources = await getJson(`${API}/resource`, { headers }, SLOW);
   const find = c => resources.find(r => r.classifier === c)?.resourceId;
 
-  // Last 7 days, one total per local day, today last.
+  // Daily totals from Monday of last week to Sunday of this week (14 days):
+  // this calendar week for the chart and totals, plus last week in case
+  // Bright's latest full day is before this Monday.
   const zone = tz(env);
   const p = localParts(now, zone);
   const today = Date.UTC(+p.y, +p.m - 1, +p.d);
+  const dow = (new Date(today).getUTCDay() + 6) % 7; // Monday = 0
+  const start = today - (dow + 7) * 864e5; // Monday last week
+  const DAYS = 14;
   const day = ms => new Date(ms).toISOString().slice(0, 10);
-  const from = `${day(today - 6 * 864e5)}T00:00:00`;
+  const from = `${day(start)}T00:00:00`;
   const to = `${day(today)}T23:59:59`;
   const offset = -utcOffsetMinutes(now, zone);
 
@@ -68,11 +73,11 @@ async function fetchEnergy(env, now) {
     }
     const q = new URLSearchParams({ from, to, period: "P1D", function: "sum", offset: String(offset) });
     const r = await getJson(`${API}/resource/${id}/readings?${q}`, { headers }, SLOW);
-    const values = new Array(7).fill(null);
+    const values = new Array(DAYS).fill(null);
     for (const [ts, value] of r.data || []) {
       const lp = localParts(new Date(ts * 1000), zone);
-      const i = 6 - Math.round((today - Date.UTC(+lp.y, +lp.m - 1, +lp.d)) / 864e5);
-      if (i >= 0 && i < 7) values[i] = value;
+      const i = Math.round((Date.UTC(+lp.y, +lp.m - 1, +lp.d) - start) / 864e5);
+      if (i >= 0 && i < DAYS) values[i] = value;
     }
     return values;
   };
@@ -88,17 +93,12 @@ async function fetchEnergy(env, now) {
   const [electric, gas] = await Promise.all([fuel("electricity"), fuel("gas")]);
   if (!electric && !gas) throw new Error("No smart meter found in Bright");
 
-  const days = [];
-  for (let i = 6; i >= 0; i--) {
-    days.push(new Intl.DateTimeFormat("en-GB", { weekday: "narrow", timeZone: "UTC" })
-      .format(new Date(today - i * 864e5)));
-  }
-  const dayNames = [];
-  for (let i = 6; i >= 0; i--) {
-    dayNames.push(new Intl.DateTimeFormat("en-GB", { weekday: "long", timeZone: "UTC" })
-      .format(new Date(today - i * 864e5)));
-  }
-  cached = { electric, gas, days, dayNames };
+  const name = (i, style) => new Intl.DateTimeFormat("en-GB", { weekday: style, timeZone: "UTC" })
+    .format(new Date(start + i * 864e5));
+  const days = [...Array(DAYS).keys()].map(i => name(i, "narrow"));
+  const dayNames = [...Array(DAYS).keys()].map(i => name(i, "long"));
+  // weekStart: index of this Monday; todayIndex: index of today.
+  cached = { electric, gas, days, dayNames, weekStart: 7, todayIndex: 7 + dow };
   cachedAt = Date.now();
   return cached;
 }
