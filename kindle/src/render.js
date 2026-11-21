@@ -681,6 +681,29 @@ function renderLandscape({ now, zone, weather, bus, car, power, notes = [], page
   return svgDoc(body, L_WIDTH, L_HEIGHT);
 }
 
+// Night mode background (see night.js): everything but the clock, which the
+// Kindle draws itself from digit pictures while Wi-Fi is off. The weather is
+// what's expected overnight and tomorrow, as it won't update until morning.
+export function nightBackground({ date, zone, weather, landscape, until, clockBottom }) {
+  const W = landscape ? L_WIDTH : WIDTH, H = landscape ? L_HEIGHT : HEIGHT, cx = W / 2;
+  let y = clockBottom + (landscape ? 60 : 56);
+  let out = text(cx, y, dateText(date, zone), { size: 30, anchor: "middle" });
+  y += landscape ? 32 : 44;
+  out += line(y, 100, W - 100);
+  if (weather.ok) {
+    const w = weather.value;
+    const [rainHead, rainMore] = rainText(w.rain);
+    y += landscape ? 46 : 60;
+    out += text(cx, y, rainHead, { size: 26, bold: true, anchor: "middle", max: W * 1.1 - 2 * M });
+    if (rainMore) { y += 34; out += text(cx, y, rainMore, { size: 21, anchor: "middle", max: W * 1.1 - 2 * M }); }
+    const [, tomorrow] = outlook(w);
+    y += landscape ? 44 : 56;
+    out += text(cx, y, tomorrow, { size: 23, fill: "#222", anchor: "middle", max: W * 1.1 - 2 * M });
+  }
+  out += text(cx, H - (landscape ? 14 : 30), `Night mode until ${until} · Wi-Fi off · tap to wake`, { size: landscape ? 16 : 18, fill: GREY, anchor: "middle" });
+  return svgDoc(out, W, H);
+}
+
 // page 0: screensaver. page 1: clock, weather, buses and drive. page 2: clock, weather and energy.
 // landscape: draw 800 x 600 instead of 600 x 800 (rotating for the Kindle happens later).
 // back: show the "Tap for buses" button on the energy page (not when it stands

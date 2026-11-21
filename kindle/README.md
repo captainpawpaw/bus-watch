@@ -39,6 +39,7 @@ Any section you don't set up is left out, and the buses get the space.
 | `DRIVE_TO`, `DRIVE_LABEL` | Optional: one journey shown all day instead | Postcode or `latitude,longitude`, and a name |
 | `DRIVE_MAP` | Optional. A small map of the route is shown beside the drive time; set `off` to hide it and give the buses more room. | `off` |
 | `SCREENSAVER` | Optional. When the Kindle shows the big-clock screensaver; a tap wakes the dashboard for 5 minutes. Default `00:00-06:00`. `outside-drives` shows it at all times except during your `DRIVE_1`, `DRIVE_2`… windows and bus hours (`BUS_HOURS` and any stop's own hours). | e.g. `22:30-06:00`, `outside-drives`, or `off` |
+| `NIGHT` | Optional. Night mode hours, to save battery: the Kindle turns Wi-Fi off and only the clock keeps going (it draws it itself), with the overnight rain and tomorrow's weather. A tap wakes the dashboard for 5 minutes. Needs the latest `bus-dash.sh` on the Kindle. | e.g. `22:00-04:00` |
 | `ORIENTATION` | Optional. `portrait` (the default), `landscape-right` (Kindle on its side, charging port on the right) or `landscape-left` (port on the left). Landscape puts the clock and weather in a column on the left. | e.g. `landscape-right` |
 | `GLOW_USERNAME`, `GLOW_PASSWORD` | Your smart meter, via the free **Bright** app (works with any UK supplier) | Install Bright (by Hildebrand), sign up and link your meter. Use that email and password. |
 | `METOFFICE_KEY` | Optional (Secret). Makes the Met Office the first weather source, with Open-Meteo and then yr.no as backups. Free: Weather DataHub, "Site-specific – Global Spot" plan (360 calls a day; this uses about 96). | datahub.metoffice.gov.uk → register → subscribe to Global Spot → copy the API key |
@@ -106,6 +107,9 @@ Kindle's own screen and starts `bus-dash.sh`, which:
   06:00 unless you set `SCREENSAVER` in Vercel (e.g. `22:30-06:00`, or `off`). A tap or swipe wakes the
   bus page for 5 minutes;
 - does a full (flashing) refresh now and then to clear e-ink ghosting;
+- in night mode (`NIGHT`, e.g. `22:00-04:00`), turns Wi-Fi off and stops downloading: it fetches a
+  background and the clock's digits just before, and changes the digits itself each minute. A tap
+  turns Wi-Fi on and wakes the dashboard for 5 minutes;
 - reconnects Wi-Fi if it drops (nothing else does while the Kindle's own software is off), and if
   there's been no connection for 3 minutes, shows "No connection since HH:MM, retrying" at the top so
   out-of-date bus times aren't trusted.

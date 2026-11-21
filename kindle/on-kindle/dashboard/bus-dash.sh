@@ -6,6 +6,9 @@
 # for TAP_HOLD_SECONDS. If there's no page 2 (smart meter not set up), it just shows page 1.
 # During screensaver hours (set on the server), the server also offers page 0, a big
 # clock: that shows instead, and a tap wakes the normal pages for TAP_HOLD_SECONDS.
+# Night mode (NIGHT on the server, e.g. 22:00-04:00): Wi-Fi goes off and nothing is
+# downloaded; the Kindle keeps the clock going itself, drawing digit pictures it
+# fetched beforehand. A tap turns Wi-Fi on and wakes the dashboard for TAP_HOLD_SECONDS.
 # Settings are in local/env.sh. Uses kindle-dash's local/fetch-dashboard.sh and xh.
 
 DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -108,6 +111,45 @@ reconnect_wifi() {
   return 1
 }
 
+# ---------- night mode ----------
+N="$TMP/night"
+mkdir -p "$N"
+night_val() { sed -n "s/^$1 //p" "$N/info" 2>/dev/null; }
+
+# Downloads what night mode needs: the times, a background for before and after
+# midnight, and the clock's digits. Keeps the old set if anything fails.
+night_fetch() {
+  mkdir -p "$N/new"
+  "$FETCH" "$N/new/info" "night&part=info" >/dev/null 2>&1 && [ -s "$N/new/info" ] || { rm -rf "$N/new"; return 1; }
+  for part in "bg&day=0:bg0" "bg&day=1:bg1" "colon:colon" "digit&d=0:d0" "digit&d=1:d1" "digit&d=2:d2" \
+    "digit&d=3:d3" "digit&d=4:d4" "digit&d=5:d5" "digit&d=6:d6" "digit&d=7:d7" "digit&d=8:d8" "digit&d=9:d9"; do
+    "$FETCH" "$N/new/${part#*:}.png" "night&part=${part%%:*}" >/dev/null 2>&1 && [ -s "$N/new/${part#*:}.png" ] || { rm -rf "$N/new"; return 1; }
+  done
+  mv "$N/new/"* "$N/" && rm -rf "$N/new"
+  return 0
+}
+
+# Draws one piece of the clock (a digit, or "colon") at its place on the screen.
+night_piece() {
+  set -- "$1" "$(night_val "pos $2")"
+  # shellcheck disable=SC2086
+  set -- "$1" $2
+  eips -g "$N/$1.png" -x "$2" -y "$3" >/dev/null 2>&1
+}
+
+wifi_off() { lipc-set-prop com.lab126.cmd wirelessEnable 0 >/dev/null 2>&1; }
+wifi_on() {
+  lipc-set-prop com.lab126.cmd wirelessEnable 1 >/dev/null 2>&1
+  lipc-set-prop com.lab126.wifid enable 1 >/dev/null 2>&1
+  i=0
+  while [ $i -lt 15 ]; do
+    [ "$(lipc-get-prop com.lab126.wifid cmState 2>/dev/null)" = CONNECTED ] && sleep 2 && return 0
+    sleep 2
+    i=$((i + 1))
+  done
+  return 1
+}
+
 lipc-set-prop com.lab126.powerd preventScreenSaver 1 >/dev/null 2>&1
 
 TOUCH="${TOUCH_DEVICE:-$(find_touch)}"
@@ -131,12 +173,75 @@ WARNING=""
 last_min=""
 shown=""
 count=$FULL_REFRESH_EVERY # so the first picture is a full, clean refresh
+in_night=0
+night_tried=0
+night_ready_for=""
 log "started: swap every ${ROTATE_SECONDS}s, tap holds page 1 for ${TAP_HOLD_SECONDS}s"
 
 while true; do
   now=$(date +%s)
   min=$(date +%H%M)
   fresh=0
+
+  # ----- night mode -----
+  n_start=$(night_val start); n_end=$(night_val end)
+  tap=$(cat "$TAP_FILE" 2>/dev/null)
+  idle=1
+  [ $((now - ${tap:-0})) -lt "$TAP_HOLD_SECONDS" ] && idle=0
+  if [ -n "$n_start" ] && [ "$now" -ge "$n_start" ] && [ "$now" -lt "$n_end" ] && [ "$idle" = 1 ]; then
+    if [ "$in_night" = 0 ]; then
+      log "night mode on until $(date -d "@$n_end" '+%H:%M' 2>/dev/null || echo "$n_end"): Wi-Fi off, battery $(battery)"
+      wifi_off
+      in_night=1
+      n_day=""
+      n_full=0
+    fi
+    # The local time, from the time zone offset the server gave.
+    lt=$((now + $(night_val offset)))
+    hh=$(((lt / 3600) % 24)); mm=$(((lt / 60) % 60))
+    digits="$((hh / 10))$((hh % 10))$((mm / 10))$((mm % 10))"
+    day=0
+    [ "$now" -ge "$(night_val midnight)" ] && day=1
+    # The background (with the date) after midnight, and once an hour to clear ghosting.
+    if [ "$day" != "$n_day" ] || [ $((now - n_full)) -ge 3600 ]; then
+      eips -f -g "$N/bg$day.png" >/dev/null 2>&1
+      night_piece colon colon
+      n_day=$day
+      n_full=$now
+      n_shown="    "
+    fi
+    i=1
+    for name in h1 h2 m1 m2; do
+      new=$(echo "$digits" | cut -c$i); old=$(echo "$n_shown" | cut -c$i)
+      [ "$new" != "$old" ] && night_piece "d$new" "$name"
+      i=$((i + 1))
+    done
+    n_shown=$digits
+    sleep 2
+    continue
+  fi
+  if [ "$in_night" = 1 ]; then
+    in_night=0
+    if [ "$idle" = 0 ]; then log "night mode: tap, waking for ${TAP_HOLD_SECONDS}s"; else log "night mode off, battery $(battery)"; fi
+    eips 1 1 "Waking up, connecting to Wi-Fi..." >/dev/null 2>&1
+    wifi_on || log "Wi-Fi didn't connect yet"
+    last_min=""                 # download straight away
+    shown=""
+    count=$FULL_REFRESH_EVERY   # and a full, clean refresh
+    continue
+  fi
+  # Get the night mode pictures: when there are none (or they're for a night
+  # that's over, at most every 30 minutes), and again in the 15 minutes before
+  # the night starts, so the weather on them is fresh.
+  if { [ -z "$n_end" ] || [ "$now" -ge "$n_end" ]; } && [ $((now - night_tried)) -ge 1800 ] ||
+    { [ -n "$n_start" ] && [ "$now" -lt "$n_start" ] && [ $((n_start - now)) -le 900 ] && [ "$night_ready_for" != "$n_start" ]; }; then
+    night_tried=$now
+    if night_fetch; then
+      n_start=$(night_val start)
+      [ $((n_start - now)) -le 900 ] && night_ready_for=$n_start
+      log "night mode pictures ready for $(date -d "@$n_start" '+%a %H:%M' 2>/dev/null || echo "$n_start") to $(date -d "@$(night_val end)" '+%H:%M' 2>/dev/null || night_val end)"
+    fi
+  fi
 
   # New pictures at the start of each minute, so the clock stays right.
   if [ "$min" != "$last_min" ]; then

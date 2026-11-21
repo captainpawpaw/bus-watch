@@ -34,18 +34,41 @@ async function login(env) {
   return token;
 }
 
+// After Bright fails, wait this long before asking again, so a slow or broken
+// Bright doesn't hold up every picture.
+const RETRY_MS = 10 * 60 * 1000;
+let failedAt = 0, lastError = null;
+
 export async function getEnergy(env, now) {
+  const fresh = cached && Date.now() - cachedAt < CACHE_MS;
+  if (fresh) return cached;
+  const keep = cached && Date.now() - cachedAt < KEEP_MS;
+  if (Date.now() - failedAt < RETRY_MS) {
+    if (keep) return { ...cached, stale: true };
+    throw lastError;
+  }
+  // The Kindle gives up on a picture after 30 seconds, so don't wait on Bright
+  // for long: briefly when there are figures to fall back on, longer when not.
+  const limit = keep ? 8000 : 20000;
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error("Bright didn't answer in time")), limit);
+  });
+  const attempt = fetchEnergy(env, now);
+  attempt.catch(() => {}); // it may finish (or fail) after we've stopped waiting
   try {
-    return await fetchEnergy(env, now);
+    return await Promise.race([attempt, timeout]);
   } catch (e) {
-    if (cached && Date.now() - cachedAt < KEEP_MS) return { ...cached, stale: true };
+    failedAt = Date.now(); lastError = e;
+    if (keep) return { ...cached, stale: true };
     throw e;
+  } finally {
+    clearTimeout(timer);
   }
 }
 
 async function fetchEnergy(env, now) {
   if (!env.GLOW_USERNAME || !env.GLOW_PASSWORD) throw new Error("GLOW_USERNAME / GLOW_PASSWORD not set");
-  if (cached && Date.now() - cachedAt < CACHE_MS) return cached;
 
   const t = await login(env);
   const headers = { applicationId: APP_ID, token: t };
