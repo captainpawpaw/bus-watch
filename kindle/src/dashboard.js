@@ -5,6 +5,7 @@ import { getBuses, parseStops, stopShown } from "./buses.js";
 import { getDrive, hasDrives, inDriveWindow, inWindow, activeJourney } from "./driving.js";
 import { getEnergy } from "./energy.js";
 import { getNotes, hasNotes, handleNotes } from "./notes.js";
+import { hasNight, nightInfo, pieceSvg, backgroundSvg } from "./night.js";
 import { renderSvg, WIDTH, HEIGHT } from "./render.js";
 import { greyPng, rotate } from "./png.js";
 import { tz, localParts } from "./util.js";
@@ -126,6 +127,25 @@ export async function handle(request, env, { Resvg, fonts }) {
     return new Response(viewerPage(url.searchParams.get("key")), {
       headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
     });
+  }
+  // Night mode pieces for the Kindle (see night.js).
+  if (url.searchParams.get("page") === "night") {
+    if (!hasNight(env)) return new Response("Night mode is off (set NIGHT, e.g. 22:00-04:00).", { status: 404 });
+    const { landscape, turn } = orientation(env);
+    const part = url.searchParams.get("part");
+    if (part === "info") {
+      return new Response(nightInfo(env, landscape, turn), { headers: { "content-type": "text/plain", "cache-control": "no-store" } });
+    }
+    let svg;
+    if (part === "bg") {
+      const weather = await settle(true, () => getWeather(env));
+      svg = backgroundSvg(env, landscape, weather, url.searchParams.get("day") === "1" ? 1 : 0);
+    } else if (part === "colon") svg = pieceSvg(landscape, ":");
+    else if (part === "digit" && /^\d$/.test(url.searchParams.get("d") || "")) svg = pieceSvg(landscape, url.searchParams.get("d"));
+    else return new Response("Unknown night part.", { status: 404 });
+    if (url.searchParams.get("format") === "svg") return new Response(svg, { headers: { "content-type": "image/svg+xml" } });
+    const png = await svgToPng(svg, Resvg, fonts, url.searchParams.get("upright") === "1" ? null : turn);
+    return new Response(png, { headers: { "content-type": "image/png", "cache-control": "no-store" } });
   }
   // ?page=1 or ?page=2. Asking for a page at all means the multi-page layout, so
   // energy moves to page 2; without ?page the single-page layout stays as it was.
