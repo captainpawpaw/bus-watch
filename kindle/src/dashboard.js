@@ -9,9 +9,21 @@ import { renderSvg, WIDTH, HEIGHT } from "./render.js";
 import { greyPng, rotate } from "./png.js";
 import { tz, localParts } from "./util.js";
 
-const settle = (configured, fn) => configured
-  ? fn().then(value => ({ ok: true, value }), error => ({ ok: false, error }))
-  : Promise.resolve({ ok: false, missing: true, error: new Error("not set up") });
+// Each section has 22 seconds at most: the Kindle gives up on the whole picture
+// after 30, so a slow service just shows as unavailable instead.
+const LIMIT_MS = 22000;
+const settle = (configured, fn) => {
+  if (!configured) return Promise.resolve({ ok: false, missing: true, error: new Error("not set up") });
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error("took too long to answer")), LIMIT_MS);
+  });
+  const work = fn();
+  work.catch(() => {});
+  return Promise.race([work, timeout])
+    .then(value => ({ ok: true, value }), error => ({ ok: false, error }))
+    .finally(() => clearTimeout(timer));
+};
 
 export const hasEnergy = env => !!(env.GLOW_USERNAME && env.GLOW_PASSWORD);
 
