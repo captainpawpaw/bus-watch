@@ -6,8 +6,8 @@ export const WIDTH = 600;
 export const HEIGHT = 800;
 const M = 24; // side margin
 const RIGHT = WIDTH - M;
-const GREY = "#666";
-const LIGHT = "#aaa";
+const GREY = "#000"; // was grey (#666): plain black reads better on the Kindle
+const LIGHT = "#000";
 
 const esc = s => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
@@ -362,7 +362,7 @@ function energyBlock(name, f, e, top, chart = true) {
   if (today > 0) rest.push(`today ${today.toFixed(1)} kWh`);
   const restText = rest.length ? fit(`\u00a0· ${rest.join(" · ")}`, 19, WIDTH * 1.1 - 2 * M - textWidth(lead, 21, true)) : "";
   out += `<text x="${M}" y="${y + 63}" font-size="21" font-weight="700" fill="#000">${esc(lead)}` +
-    (restText ? `<tspan font-size="19" font-weight="400" fill="#333">${esc(restText)}</tspan>` : "") + `</text>`;
+    (restText ? `<tspan font-size="19" font-weight="400" fill="#000">${esc(restText)}</tspan>` : "") + `</text>`;
 
   if (!chart) return out;
   // This week, Monday to Sunday, as bars with their values, the latest full day in black.
@@ -409,15 +409,15 @@ function rainBox(r, x, top, right) {
   out += icon(r ? "rain" : "cloud", x - 2, top + 12, 34, true);
   if (!r) {
     out += text(tx, top + 34, "No rain expected", { size: 16, bold: true, max: w });
-    return out + text(tx, top + 56, "in the next 12 hours", { size: 14, fill: GREY, max: w });
+    return out + text(tx, top + 56, "in the next 12 hours", { size: 15, max: w * 1.1 });
   }
   const dur = r.minutes >= 90 ? `${Math.round(r.minutes / 30) / 2} h` : `${r.minutes} min`;
   out += text(tx, top + 32, r.now ? "Raining now" : `Rain from ${r.start}`, { size: 18, bold: true, max: w });
   const when = r.now ? (r.endsInWindow ? `until ${r.end}` : "for a while")
     : `${r.startDay}${r.endsInWindow ? `for ${dur}` : "for a while"}`;
-  out += text(tx, top + 54, `${r.intensity} · ${when}`, { size: 15, max: w });
-  return out + text(tx, top + 74, [`up to ${r.peak} mm/h`, r.chance != null ? `${r.chance}%` : ""].filter(Boolean).join(" · "),
-    { size: 13, fill: GREY, max: w });
+  out += text(tx, top + 54, `${r.intensity} · ${when}`, { size: 16, max: w * 1.1 });
+  return out + text(tx, top + 75, [`up to ${r.peak} mm/h`, r.chance != null ? `${r.chance}%` : ""].filter(Boolean).join(" · "),
+    { size: 15, max: w * 1.1 });
 }
 
 // The night screensaver: a big clock, the date and a little weather.
@@ -438,8 +438,8 @@ function screensaver(now, zone, weather, notes = []) {
     out += text(cx, 566, rainHead, { size: 22, bold: true, anchor: "middle", max: WIDTH - 2 * M });
     if (rainMore) out += text(cx, 596, rainMore, { size: 21, anchor: "middle", max: WIDTH * 1.1 - 2 * M });
     const [today, tomorrow] = outlook(w);
-    out += text(cx, 644, today, { size: 23, fill: "#222", anchor: "middle", max: WIDTH * 1.1 - 2 * M });
-    out += text(cx, 678, tomorrow, { size: 23, fill: "#222", anchor: "middle", max: WIDTH * 1.1 - 2 * M });
+    out += text(cx, 644, today, { size: 23, fill: "#000", anchor: "middle", max: WIDTH * 1.1 - 2 * M });
+    out += text(cx, 678, tomorrow, { size: 23, fill: "#000", anchor: "middle", max: WIDTH * 1.1 - 2 * M });
   } else {
     out += text(cx, 470, "Weather unavailable", { size: 22, fill: GREY, anchor: "middle" });
   }
@@ -603,7 +603,7 @@ function leftColumn(now, zone, weather) {
   out += text(x, 268, `${desc}, feels ${temp(wv.now.feels)}`, { size: 17, max: w });
   out += text(x, 292, `High ${temp(wv.today.max)} · Low ${temp(wv.today.min)} · ` +
     (wv.source === "yr.no" ? "via yr.no" : `${Math.round(wv.now.wind)} mph`),
-    { size: 14, fill: GREY, max: w });
+    { size: 16, max: w * 1.1 });
   out += line(310, x, COL - M);
 
   // Next hours, one per row, then tomorrow.
@@ -614,10 +614,10 @@ function leftColumn(now, zone, weather) {
   out += rainBox(wv.rain, x, 486, COL - M);
   rows.forEach((r, i) => {
     const y = 342 + i * 44;
-    out += text(x, y, r.label, { size: 16, fill: r.bold ? "#000" : GREY, bold: r.bold });
+    out += text(x, y, r.label, { size: 18, bold: r.bold });
     out += icon(describe(r.code)[1], x + 58, y - 28, 38, r.day);
     out += text(x + 108, y, r.t, { size: 20, bold: true });
-    out += text(COL - M, y, (r.rain == null ? "–" : `${r.rain}%`), { size: 14, fill: GREY, anchor: "end" });
+    out += text(COL - M, y, (r.rain == null ? "–" : `${r.rain}%`), { size: 17, anchor: "end" });
   });
   return out;
 }
@@ -659,8 +659,8 @@ function landscapeScreensaver(now, zone, weather, notes = []) {
     out += text(cx, 470, rainHead, { size: 24, bold: true, anchor: "middle", max: L_WIDTH - 2 * M });
     if (rainMore) out += text(cx, 498, rainMore, { size: 20, anchor: "middle", max: L_WIDTH * 1.1 - 2 * M });
     const [today, tomorrow] = outlook(w);
-    out += text(cx, 532, today, { size: 21, fill: "#222", anchor: "middle", max: L_WIDTH * 1.1 - 2 * M });
-    out += text(cx, 562, tomorrow, { size: 21, fill: "#222", anchor: "middle", max: L_WIDTH * 1.1 - 2 * M });
+    out += text(cx, 532, today, { size: 21, fill: "#000", anchor: "middle", max: L_WIDTH * 1.1 - 2 * M });
+    out += text(cx, 562, tomorrow, { size: 21, fill: "#000", anchor: "middle", max: L_WIDTH * 1.1 - 2 * M });
   } else {
     out += text(cx, 440, "Weather unavailable", { size: 22, fill: GREY, anchor: "middle" });
   }
@@ -698,7 +698,7 @@ export function nightBackground({ date, zone, weather, landscape, until, clockBo
     if (rainMore) { y += 34; out += text(cx, y, rainMore, { size: 21, anchor: "middle", max: W * 1.1 - 2 * M }); }
     const [, tomorrow] = outlook(w);
     y += landscape ? 44 : 56;
-    out += text(cx, y, tomorrow, { size: 23, fill: "#222", anchor: "middle", max: W * 1.1 - 2 * M });
+    out += text(cx, y, tomorrow, { size: 23, fill: "#000", anchor: "middle", max: W * 1.1 - 2 * M });
   }
   out += text(cx, H - (landscape ? 14 : 30), `Night mode until ${until} · Wi-Fi off · tap to wake`, { size: landscape ? 16 : 18, fill: GREY, anchor: "middle" });
   return svgDoc(out, W, H);
