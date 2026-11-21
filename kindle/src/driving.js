@@ -127,9 +127,14 @@ export const hasDrives = env =>
 const places = new Map();
 async function resolvePlace(text, name) {
   if (/^\s*-?\d+(\.\d+)?\s*,\s*-?\d+(\.\d+)?\s*$/.test(text)) return parseLatLon(text, name);
-  const pc = String(text || "").replace(/\s+/g, "").toUpperCase();
+  // Forgiving: a postcode anywhere in the text counts (e.g. "Asda, E6 5JP"),
+  // and stray characters such as quotes or invisible spaces are ignored.
+  const flat = String(text || "").toUpperCase().replace(/[^A-Z0-9 ]/g, " ");
+  const found = flat.match(/\b([A-Z]{1,2}\d[A-Z\d]?)\s*(\d[A-Z]{2})\b/);
+  const pc = found ? found[1] + found[2] : flat.replace(/\s+/g, "");
   if (!/^[A-Z]{1,2}\d[A-Z\d]?\d[A-Z]{2}$/.test(pc)) {
-    throw new Error(`${name} should be a postcode or latitude,longitude`);
+    // Show what it got, so the setting can be fixed.
+    throw new Error(`${name}: "${String(text || "").trim() || "(empty)"}" isn't a postcode`);
   }
   if (!places.has(pc)) {
     const r = await getJson(`https://api.postcodes.io/postcodes/${pc}`);
